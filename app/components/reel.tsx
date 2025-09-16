@@ -1,11 +1,17 @@
-import { UserProps } from '@/lib/database.module';
+import { CommentProps, UserProps } from '@/lib/database.module';
+import { handleLike as apiHandleLike, getPostComments } from '@/lib/db';
+import { useUser } from '@clerk/clerk-expo';
 import Entypo from '@expo/vector-icons/Entypo';
-import { useVideoPlayer, VideoView } from 'expo-video';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useVideoPlayer, VideoPlayer, VideoView } from 'expo-video';
 import { ChatCircle, Heart, Repeat, SealCheck, ShareFat } from 'phosphor-react-native';
-import React, { useCallback, useEffect, useState } from 'react';
-import { Dimensions, Image, StyleSheet, Text, ToastAndroid, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Dimensions, Image, Modal, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, TouchableOpacity, View } from 'react-native';
+import ExpandableText from './ExpandableText';
+import Comment from './comment';
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+
+const { width: screenWidth } = Dimensions.get('window');
 
 export interface ReelProps {
     id: string;
@@ -30,44 +36,116 @@ export default function Reel({
     isPlaying = false, 
     onPlay 
 }: ReelProps) {
+    const { user } = useUser();
     const [playing, setPlaying] = useState(isPlaying);
     const [liked, setLiked] = useState(isLiked);
     const [likesCount, setLikesCount] = useState(likes);
     const [following, setFollowing] = useState(false);
+    const [isPlayerReleased, setIsPlayerReleased] = useState(false);
+    const [commentVisible, setCommentVisible] = useState(false);
+    const [Comments, setComments] = useState<Array<CommentProps> | null>(null);
+    const [loadingComments, setLoadingComments] = useState(false);
+    const playerRef = useRef<VideoPlayer | null>(null);
 
     const player = useVideoPlayer(videoUrl, (player) => {
-        player.loop = true;
-        player.muted = false;
-        player.volume = 0.8;
+        if (player) {
+            player.loop = true;
+            player.muted = false;
+            player.volume = 0.8;
+            playerRef.current = player;
+        }
     });
 
     useEffect(() => {
         setPlaying(isPlaying);
-        if (isPlaying) {
-            player.play();
-        } else {
-            player.pause();
+        const currentPlayer = playerRef.current || player;
+        
+        if (!isPlayerReleased && currentPlayer) {
+            try {
+                if (isPlaying) {
+                    currentPlayer.play();
+                } else {
+                    currentPlayer.pause();
+                }
+            } catch (error) {
+                console.warn('Error controlling video player:', error);
+                setIsPlayerReleased(true);
+            }
         }
-    }, [isPlaying, player]);
+    }, [isPlaying, player, isPlayerReleased]);
 
-    // Cleanup when component unmounts
+    // Cleanup when component unmounts or video changes
     useEffect(() => {
         return () => {
-            player.pause();
+            const currentPlayer = playerRef.current || player;
+            if (!isPlayerReleased && currentPlayer) {
+                try {
+                    currentPlayer.pause();
+                } catch (error) {
+                    console.warn('Error pausing video player during cleanup:', error);
+                } finally {
+                    setIsPlayerReleased(true);
+                    playerRef.current = null;
+                }
+            }
         };
-    }, [player]);
+    }, [videoUrl]); // Only cleanup when video URL changes
 
     const togglePlay = useCallback(() => {
+        if (!isPlayerReleased) {
+            const currentPlayer = playerRef.current || player;
+            if (currentPlayer) {
+                try {
+                    if (playing) {
+                        currentPlayer.pause();
+                        setPlaying(false);
+                    } else {
+                        currentPlayer.play();
+                        setPlaying(true);
+                    }
+                } catch (error) {
+                    console.warn('Error toggling video playback:', error);
+                    setIsPlayerReleased(true);
+                }
+            }
+        }
+        
         if (onPlay) {
             onPlay();
         }
-    }, [onPlay]);
+    }, [playing, onPlay, player, isPlayerReleased]);
 
-    const handleLike = useCallback(() => {
-        setLiked(!liked);
-        setLikesCount(prev => liked ? prev - 1 : prev + 1);
-        ToastAndroid.show(liked ? "تم إلغاء الإعجاب" : "تم الإعجاب", ToastAndroid.SHORT);
-    }, [liked]);
+    const handleLike = useCallback(async () => {
+        if (!user || !id) {
+            ToastAndroid.show("Unable to like reel", ToastAndroid.SHORT);
+            return;
+        }
+
+        const newLikedState = !liked;
+        
+        // Optimistically update UI
+        setLiked(newLikedState);
+        setLikesCount(prev => newLikedState ? prev + 1 : (prev > 0 ? prev - 1 : 0));
+        
+        try {
+            // Call API
+            const result = await apiHandleLike(parseInt(id), user.id);
+            
+            if (result === null) {
+                // Revert optimistic update if API call failed
+                setLiked(!newLikedState);
+                setLikesCount(prev => newLikedState ? (prev > 0 ? prev - 1 : 0) : prev + 1);
+                ToastAndroid.show("Failed to update like", ToastAndroid.SHORT);
+            } else {
+                ToastAndroid.show(newLikedState ? "Liked" : "Unliked", ToastAndroid.SHORT);
+            }
+        } catch (error) {
+            // Revert optimistic update if error occurred
+            setLiked(!newLikedState);
+            setLikesCount(prev => newLikedState ? (prev > 0 ? prev - 1 : 0) : prev + 1);
+            ToastAndroid.show("Error updating like", ToastAndroid.SHORT);
+        }
+    }, [liked, user, id]);
 
     const handleFollow = useCallback(() => {
         setFollowing(!following);
@@ -75,7 +153,7 @@ export default function Reel({
     }, [following]);
 
     const handleComment = useCallback(() => {
-        ToastAndroid.show("التعليقات", ToastAndroid.SHORT);
+        setCommentVisible(true);
     }, []);
 
     const handleShare = useCallback(() => {
@@ -97,10 +175,16 @@ export default function Reel({
                 <VideoView
                     player={player}
                     style={styles.video}
-                    contentFit="cover"
+                    contentFit="contain"
                     nativeControls={false}
                 />
             </TouchableOpacity>
+
+            <LinearGradient
+                colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.7)']}
+                style={styles.bottomGradient}
+                pointerEvents="none"
+            />
 
             {/* User Info and Content */}
             <View style={styles.overlay}>
@@ -125,7 +209,8 @@ export default function Reel({
                     <View style={styles.contentContainer}>
                         <Text style={styles.title} numberOfLines={2}>{title}</Text>
                         {caption && (
-                            <Text style={styles.caption} numberOfLines={3}>{caption}</Text>
+                            // <Text style={styles.caption} numberOfLines={3}>{caption}</Text>
+                            <ExpandableText content={caption} color='white' />
                         )}
                     </View>
                 </View>
@@ -166,6 +251,77 @@ export default function Reel({
                     </TouchableOpacity>
                 </View>
             </View>
+
+            <Modal
+                animationType="slide"
+                visible={commentVisible}
+                style={styles.commentModal}
+                backdropColor={'rgba(87, 87, 87, 0.14)'}
+                onRequestClose={() => setCommentVisible(!commentVisible)}
+                onShow={async () => {
+                    if (!Comments) {
+                        setLoadingComments(true);
+                        try {
+                            const fetchedComments = await getPostComments(parseInt(id));
+                            setComments(fetchedComments || []);
+                        } catch (error) {
+                            console.log("Error fetching comments:", error);
+                            setComments([]);
+                        } finally {
+                            setLoadingComments(false);
+                        }
+                    }
+                }}
+            >
+                <TouchableOpacity onPress={() => setCommentVisible(!commentVisible)} style={{ flex: 1 }}></TouchableOpacity>
+                <View style={styles.commentContainer}>
+                    <Text style={{fontFamily: 'bold', fontSize: 18, color: 'black', marginBottom: 10, paddingBottom: 10, textAlign: "center", borderBottomColor: "#c3c3c3ce", borderBottomWidth: 0.5}}>التعليقات</Text>
+                    <ScrollView style={{flex: 1}} showsVerticalScrollIndicator={false}>
+                        {loadingComments ? (
+                            <View style={{flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 40}}>
+                                <Text style={{fontFamily: 'regular', fontSize: 16, color: '#666', textAlign: 'center'}}>
+                                    جاري تحميل التعليقات...
+                                </Text>
+                            </View>
+                        ) : Comments && Comments.length > 0 ? (
+                            <Comment 
+                                comments={Comments} 
+                                onReply={(commentId, username) => {
+                                    ToastAndroid.show(`رد على ${username}`, ToastAndroid.SHORT);
+                                    // You can add reply functionality here
+                                }}
+                                onLike={(commentId) => {
+                                    ToastAndroid.show("تم الإعجاب بالتعليق", ToastAndroid.SHORT);
+                                }}
+                            />
+                        ) : (
+                            <View style={{flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 40}}>
+                                <Text style={{fontFamily: 'regular', fontSize: 16, color: '#666', textAlign: 'center'}}>
+                                    لا توجد تعليقات حتى الآن
+                                </Text>
+                                <Text style={{fontFamily: 'regular', fontSize: 14, color: '#999', textAlign: 'center', marginTop: 4}}>
+                                    كن أول من يعلق!
+                                </Text>
+                            </View>
+                        )}
+                    </ScrollView>
+                    <View style={styles.commentInput}>
+                        <Image
+                            source={{uri: user?.imageUrl}}
+                            style={{width: 40, height: 40, borderRadius: 20, marginRight: 8}}
+                        />
+                        <TextInput
+                            placeholder="أضف تعليق..."
+                            placeholderTextColor={'#888888'}
+                            style={{backgroundColor: '#ddddddff', flex: 1, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, fontFamily: 'regular'}}
+                            multiline
+                            numberOfLines={1}
+                            textAlignVertical="top"
+                            textAlign='right'
+                         />
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -173,7 +329,7 @@ export default function Reel({
 const styles = StyleSheet.create({
     container: {
         width: screenWidth,
-        height: screenHeight,
+        flex: 1,
         backgroundColor: '#000',
         position: 'relative',
     },
@@ -184,23 +340,29 @@ const styles = StyleSheet.create({
         width: '100%',
         height: '100%',
     },
+    bottomGradient: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: 150,
+    },
     overlay: {
         position: 'absolute',
         bottom: 0,
         left: 0,
         right: 0,
-        paddingHorizontal: 16,
-        paddingBottom: 32,
-        flexDirection: 'row',
+        paddingHorizontal: 10,
+        paddingBottom: 0,
+        flexDirection: 'row-reverse',
         justifyContent: 'space-between',
         alignItems: 'flex-end',
     },
     leftContent: {
         flex: 1,
-        marginRight: 16,
     },
     userInfo: {
-        flexDirection: 'row',
+        flexDirection: 'row-reverse',
         alignItems: 'center',
         marginBottom: 12,
     },
@@ -208,13 +370,16 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 20,
-        marginRight: 12,
     },
     userDetails: {
         flex: 1,
+        flexDirection: 'row-reverse',
+        // justifyContent: 'center',
+        alignItems: 'center',
+        gap: 5
     },
     usernameRow: {
-        flexDirection: 'row',
+        flexDirection: 'row-reverse',
         alignItems: 'center',
         marginBottom: 4,
     },
@@ -256,6 +421,7 @@ const styles = StyleSheet.create({
     rightActions: {
         alignItems: 'center',
         gap: 24,
+        marginBottom: 24,
     },
     actionButton: {
         alignItems: 'center',
@@ -267,4 +433,24 @@ const styles = StyleSheet.create({
         fontFamily: 'regular',
         textAlign: 'center',
     },
+    commentModal: {
+        flex: 1,
+        marginTop: 100, 
+        display: 'flex',
+        justifyContent: 'flex-end',
+        alignItems: 'flex-end',
+    }, 
+    commentContainer: {
+        height: '95%',
+        backgroundColor: 'white',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        padding: 16,
+    },
+    commentInput: {
+        flexDirection: 'row-reverse',
+        alignItems: 'center',
+        gap: 8,
+        borderTopColor: '#c3c3c3ce',
+    }
 });

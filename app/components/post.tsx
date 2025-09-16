@@ -42,7 +42,9 @@ export default function Post({id, author, title, content, images, video, created
 
     const videoSource = video ?? "";
     const player = useVideoPlayer(videoSource, (player) => {
-        player.loop = true;
+        if (player && videoSource) {
+            player.loop = true;
+        }
     });
 
     useEffect(() => {
@@ -52,26 +54,41 @@ export default function Post({id, author, title, content, images, video, created
     }, [isPlaying]);
 
     useEffect(() => {
-        if (playing && videoSource) {
-            player.play();
-        } else {
-            player.pause();
+        if (!player || !videoSource) return;
+        
+        try {
+            if (playing) {
+                player.play();
+            } else {
+                player.pause();
+            }
+            console.log("playing state:", playing)
+        } catch (error) {
+            console.log("Error controlling video player:", error);
         }
-        console.log("playing state:", playing)
     }, [playing, player, videoSource]);
 
     useEffect(() => {
         return () => {
             if (player) {
-                player.pause();
+                try {
+                    player.pause();
+                } catch (error) {
+                    console.log("Error pausing video player during cleanup:", error);
+                }
             }
         };
     }, [player]);
 
     const togglePlay = () => {
-        if (!videoSource) return;
-        setPlaying(prev => !prev);
-        onPlay && onPlay();
+        if (!videoSource || !player) return;
+        
+        try {
+            setPlaying(prev => !prev);
+            onPlay && onPlay();
+        } catch (error) {
+            console.log("Error toggling video play:", error);
+        }
     };
     const toggleLike = async () => {
         if (!user || !id) {

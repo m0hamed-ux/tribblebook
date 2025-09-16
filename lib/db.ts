@@ -1,8 +1,28 @@
-import { CommentProps, PostProps } from "@/lib/database.module";
+import { CommentProps, PostProps, UserProps } from "@/lib/database.module";
 
-export async function getPosts(): Promise<PostProps[]> {
+export async function getPosts(){
     try{
         const posts = await fetch("https://tribblebook-backend.onrender.com/posts")
+        return await posts.json() as PostProps[]
+    } catch (error) {
+        console.log(error)
+        return []
+    }
+}
+
+export async function getUserPosts(username: string){
+    try{
+        const posts = await fetch(`https://tribblebook-backend.onrender.com/u/${username}/posts`)
+        return await posts.json() as PostProps[]
+    } catch (error) {
+        console.log(error)
+        return []
+    }
+}
+
+export async function getReels(){
+    try{
+        const posts = await fetch("https://tribblebook-backend.onrender.com/posts/reels")
         return await posts.json() as PostProps[]
     } catch (error) {
         console.log(error)
@@ -41,6 +61,16 @@ export async function getPostComments(post_id: number) {
     try{
         const comments = await fetch(`https://tribblebook-backend.onrender.com/posts/${post_id}/comments`)
         return await comments.json() as Array<CommentProps>
+    } catch (error) {
+        console.log(error)
+        return null
+    }
+}
+
+export async function getUser(username: string){
+    try{
+        const user = await fetch(`https://tribblebook-backend.onrender.com/u/${username}`)
+        return await user.json() as UserProps
     } catch (error) {
         console.log(error)
         return null

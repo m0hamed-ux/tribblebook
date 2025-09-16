@@ -3,9 +3,10 @@ import { Text } from "react-native";
 
 interface Props {
   content: string;
+  color?: string;
 }
 
-const ExpandableText: React.FC<Props> = ({ content }) => {
+const ExpandableText: React.FC<Props> = ({ content, color }) => {
   const [expanded, setExpanded] = useState(false);
 
   if (!content) return null;
@@ -16,9 +17,10 @@ const ExpandableText: React.FC<Props> = ({ content }) => {
   return (
     <Text
       style={{
+
         fontFamily: "regular",
         fontSize: 14,
-        color: "black",
+        color: color || "black",
         marginBottom: 4,
         textAlign: "right",
       }}
