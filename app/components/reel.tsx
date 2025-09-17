@@ -3,6 +3,7 @@ import { handleLike as apiHandleLike, getPostComments } from '@/lib/db';
 import { useUser } from '@clerk/clerk-expo';
 import Entypo from '@expo/vector-icons/Entypo';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 import { useVideoPlayer, VideoPlayer, VideoView } from 'expo-video';
 import { ChatCircle, Heart, Repeat, SealCheck, ShareFat } from 'phosphor-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -37,6 +38,7 @@ export default function Reel({
     onPlay 
 }: ReelProps) {
     const { user } = useUser();
+    const router = useRouter();
     const [playing, setPlaying] = useState(isPlaying);
     const [liked, setLiked] = useState(isLiked);
     const [likesCount, setLikesCount] = useState(likes);
@@ -168,6 +170,12 @@ export default function Reel({
         ToastAndroid.show("المزيد من الخيارات", ToastAndroid.SHORT);
     }, []);
 
+    const navigateToUserProfile = useCallback(() => {
+        if (author?.username && author.username !== user?.username) {
+            router.push(`/(views)/userprofile?username=${author.username}`);
+        }
+    }, [author?.username, user?.username, router]);
+
     return (
         <View style={styles.container}>
             {/* Video Player */}
@@ -191,12 +199,16 @@ export default function Reel({
                 <View style={styles.leftContent}>
                     {/* User Info */}
                     <View style={styles.userInfo}>
-                        <Image source={{ uri: author.profile }} style={styles.avatar} />
+                        <TouchableOpacity onPress={navigateToUserProfile}>
+                            <Image source={{ uri: author.profile }} style={styles.avatar} />
+                        </TouchableOpacity>
                         <View style={styles.userDetails}>
-                            <View style={styles.usernameRow}>
-                                <Text style={styles.username}>{author.fullname}</Text>
-                                {author.verified && <SealCheck size={16} color="#FFB400" weight="fill" />}
-                            </View>
+                            <TouchableOpacity onPress={navigateToUserProfile}>
+                                <View style={styles.usernameRow}>
+                                    <Text style={styles.username}>{author.fullname}</Text>
+                                    {author.verified && <SealCheck size={16} color="#FFB400" weight="fill" />}
+                                </View>
+                            </TouchableOpacity>
                             <TouchableOpacity onPress={handleFollow} style={styles.followButton}>
                                 <Text style={styles.followButtonText}>
                                     {following ? "متابَع" : "متابعة"}
@@ -292,6 +304,9 @@ export default function Reel({
                                 }}
                                 onLike={(commentId) => {
                                     ToastAndroid.show("تم الإعجاب بالتعليق", ToastAndroid.SHORT);
+                                }}
+                                onUserPress={(username) => {
+                                    router.push(`/(views)/userprofile?username=${username}`);
                                 }}
                             />
                         ) : (

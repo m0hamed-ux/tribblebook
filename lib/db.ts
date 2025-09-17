@@ -76,3 +76,26 @@ export async function getUser(username: string){
         return null
     }
 }
+
+export async function createPost(title: string, content: string, userId: string, images?: string[], video?: string, links?: string){
+    try{
+        const response = await fetch("https://tribblebook-backend.onrender.com/create/post", {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${userId}`
+            },
+            body: JSON.stringify({ title, content, images, video, links })
+        })
+        if(response.ok){
+            const data = await response.json()
+            return data
+        } else {
+            console.log("create post failed:", response.statusText)
+            return null
+        }
+    } catch (error) {
+        console.log("create post error:", error)
+        return null
+    }
+}

@@ -1,6 +1,6 @@
 import Post from '@/app/components/post';
 import { PostProps } from '@/lib/database.module';
-import { getPosts, getUser } from '@/lib/db';
+import { getUser, getUserPosts } from '@/lib/db';
 import { useUser } from '@clerk/clerk-expo';
 import { Article, BookmarkSimple, List, Repeat, SealCheck } from "phosphor-react-native";
 import { useCallback, useEffect, useState } from 'react';
@@ -17,7 +17,7 @@ export default function ProfileScreen() {
 
     const loadData = useCallback(async () => {
         const userProfile = await getUser(user?.username as string);
-        const posts = await getPosts();
+        const posts = await getUserPosts(user?.username as string);
         setProfile(userProfile);
         setUserPosts(posts);
     }, [user?.username]);
@@ -35,7 +35,7 @@ export default function ProfileScreen() {
     return (
         <View style={{flex: 1, backgroundColor: "white"}}>
             <FlatList
-                data={activeTab === 'posts' ? userPosts : activeTab === 'reposts' ? userPosts.slice(1) : []}
+                data={activeTab === 'posts' ? userPosts : []}
                 keyExtractor={(item) => item.id!.toString()}
                 showsVerticalScrollIndicator={false}
                 onScrollBeginDrag={() => {setActivePostId(null)}}

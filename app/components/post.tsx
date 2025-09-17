@@ -3,6 +3,7 @@ import { timeAgo } from '@/lib/date';
 import { getPostComments, handleLike } from '@/lib/db';
 import { useUser } from '@clerk/clerk-expo';
 import Entypo from '@expo/vector-icons/Entypo';
+import { useRouter } from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { BookmarkSimple, ChatCircle, Heart, Repeat, SealCheck, ShareFat } from 'phosphor-react-native';
 import { useEffect, useState } from 'react';
@@ -28,6 +29,7 @@ export interface PostProps {
 
 export default function Post({id, author, title, content, images, video, created_at, likes, isLiked, isPlaying, onPlay}: PostProps){
     const { user } = useUser();
+    const router = useRouter();
     const [commentVisible, setCommentVisible] = useState(false);
     const [playing, setPlaying] = useState(isPlaying ?? false);
     const [liked, setLiked] = useState(isLiked ?? false);
@@ -122,17 +124,25 @@ export default function Post({id, author, title, content, images, video, created
         }
     }
 
+    const navigateToUserProfile = () => {
+        if (author?.username && author.username !== user?.username) {
+            router.push(`/(views)/userprofile?username=${author.username}`);
+        }
+    };
+
     return (
         <View style={style.constainer}>
             <View style={style.author}>
-                <Image source={{uri: author?.profile}} style={{width: 40, height: 40, borderRadius: 25}} />
-                <View style={{flex: 1}} id='name'>
+                <TouchableOpacity onPress={navigateToUserProfile}>
+                    <Image source={{uri: author?.profile}} style={{width: 40, height: 40, borderRadius: 25}} />
+                </TouchableOpacity>
+                <TouchableOpacity style={{flex: 1}} id='name' onPress={navigateToUserProfile}>
                     <View style={{flexDirection: 'row-reverse', alignItems: 'center', gap: 4}}>
                         <Text style={[style.authorname]}>{author?.fullname}</Text>
                         {author?.verified && <SealCheck size={14} color="#FFB400" weight="fill" /> }
                     </View>
                     <Text style={[style.date]}>{timeAgo(created_at!)}</Text>
-                </View>
+                </TouchableOpacity>
                 <TouchableOpacity style={{ height: 20, width: 20, justifyContent: "center", alignItems: "center"}} onPress={() => {ToastAndroid.show("Post options", ToastAndroid.SHORT)}}>
                     <Entypo name="dots-three-horizontal" size={14} color="black" />
                 </TouchableOpacity>
@@ -225,6 +235,9 @@ export default function Post({id, author, title, content, images, video, created
                                 }}
                                 onLike={(commentId) => {
                                     ToastAndroid.show("تم الإعجاب بالتعليق", ToastAndroid.SHORT);
+                                }}
+                                onUserPress={(username) => {
+                                    router.push(`/(views)/userprofile?username=${username}`);
                                 }}
                             />
                         ) : (
