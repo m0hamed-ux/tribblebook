@@ -1,4 +1,5 @@
-import { CommentProps, PostProps, UserProps } from "@/lib/database.module";
+import { CommentProps, CommunityProps, PostProps, UserProps } from "@/lib/database.module";
+import { UserPlusIcon } from "phosphor-react-native";
 
 export async function getPosts(){
     try{
@@ -97,5 +98,60 @@ export async function createPost(title: string, content: string, userId: string,
     } catch (error) {
         console.log("create post error:", error)
         return null
+    }
+}
+
+export async function getCommunities(){
+    try{
+        const communities = await fetch("https://tribblebook-backend.onrender.com/communities")
+        return await communities.json()
+    } catch (error) {
+        console.log(error)
+        return []
+    }
+}
+
+export async function getCommunity(id: string){
+    try{
+        const community = await fetch(`https://tribblebook-backend.onrender.com/communities/${id}`)
+        return await community.json()
+    } catch (error) {
+        console.log(error)
+        return null
+    }
+}
+
+export async function getCommunityPosts(id: string){
+    try{
+        const posts = await fetch(`https://tribblebook-backend.onrender.com/communities/${id}/posts`)
+        return await posts.json() as PostProps[]
+    } catch (error) {
+        console.log(error)
+        return []
+    }
+}
+
+export async function search(query: string) {
+    try {
+        const response = await fetch(`https://tribblebook-backend.onrender.com/search?q=${encodeURIComponent(query)}`)
+        if (response.ok) {
+            return await response.json() as { users: UserProps[], communities: CommunityProps[], posts: PostProps[] }
+        } else {
+            console.log("search failed:", response.statusText)
+            return { users: [], communities: [], posts: [] }
+        }
+    } catch (error) {
+        console.log("search error:", error)
+        return { users: [], communities: [], posts: [] }
+    }
+}
+
+export async function getTrendingPosts(){
+    try{
+        const posts = await fetch("https://tribblebook-backend.onrender.com/trending")
+        return await posts.json() as PostProps[]
+    } catch (error) {
+        console.log(error)
+        return []
     }
 }

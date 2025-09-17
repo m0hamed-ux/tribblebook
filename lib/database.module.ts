@@ -14,6 +14,16 @@ export interface UserProps {
     verified?: boolean | false,
 }
 
+export interface CommunityProps {
+    id: number,
+    name: string,
+    description?: string,
+    banner?: string | any,
+    profile?: string | any,
+    members?: Array<UserProps | null>,
+    admin?: UserProps | null,
+}
+
 export interface PostProps {
     id?: number,
     author?: UserProps,
@@ -25,6 +35,7 @@ export interface PostProps {
     created_at?: string | Date,
     likes?: Array<{user_id: UserProps | null}>,
     isLiked?: boolean,
+    community?: CommunityProps | null,
 }
 
 export interface CommentProps {
@@ -38,3 +49,4 @@ export interface CommentProps {
     likes?: Array<{user_id: UserProps} | null>,
     replies?: Array<CommentProps | null>,
 }
+

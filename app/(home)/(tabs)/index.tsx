@@ -58,6 +58,7 @@ export default function Page() {
               images={item.images} 
               video={item.video}
               author={item.author} 
+              community={item.community}
               likes={item.likes}
               isLiked={item.likes?.some(like => like?.user_id?.username === user?.username)}
               isPlaying={activePostId === item.id!.toString()}

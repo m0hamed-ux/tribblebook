@@ -1,4 +1,4 @@
-import { CommentProps, UserProps } from '@/lib/database.module';
+import { CommentProps, UserProps, CommunityProps } from '@/lib/database.module';
 import { timeAgo } from '@/lib/date';
 import { getPostComments, handleLike } from '@/lib/db';
 import { useUser } from '@clerk/clerk-expo';
@@ -20,6 +20,7 @@ export interface PostProps {
     images?: string[],
     video?: string,
     links?: string,
+    community?: CommunityProps | null,
     created_at?: string | Date,
     likes?: Array<{user_id: UserProps | null}>,
     isLiked?: boolean,
@@ -27,7 +28,7 @@ export interface PostProps {
     onPlay?: () => void,
 }
 
-export default function Post({id, author, title, content, images, video, created_at, likes, isLiked, isPlaying, onPlay}: PostProps){
+export default function Post({id, author, title, content, images, video, community, created_at, likes, isLiked, isPlaying, onPlay}: PostProps){
     const { user } = useUser();
     const router = useRouter();
     const [commentVisible, setCommentVisible] = useState(false);
@@ -129,19 +130,36 @@ export default function Post({id, author, title, content, images, video, created
             router.push(`/(views)/userprofile?username=${author.username}`);
         }
     };
+    console.log("community:", community)
 
     return (
         <View style={style.constainer}>
             <View style={style.author}>
                 <TouchableOpacity onPress={navigateToUserProfile}>
-                    <Image source={{uri: author?.profile}} style={{width: 40, height: 40, borderRadius: 25}} />
+                    <Image source={{uri: community?.profile}} style={{width: 40, height: 40, borderRadius: 10}} />
+                    <Image source={{uri: author?.profile}} style={{width: 20, height: 20, borderRadius: 25, position: "absolute", bottom: -5, left:-5}} />
                 </TouchableOpacity>
                 <TouchableOpacity style={{flex: 1}} id='name' onPress={navigateToUserProfile}>
-                    <View style={{flexDirection: 'row-reverse', alignItems: 'center', gap: 4}}>
-                        <Text style={[style.authorname]}>{author?.fullname}</Text>
-                        {author?.verified && <SealCheck size={14} color="#FFB400" weight="fill" /> }
-                    </View>
-                    <Text style={[style.date]}>{timeAgo(created_at!)}</Text>
+                    {community ? (
+                        <View>
+                            <View style={{flexDirection: 'row-reverse', alignItems: 'center', gap: 4}}>
+                                <Text style={[style.authorname, {fontSize: 14}]}>{community?.name}</Text>
+                            </View>
+                            <View style={{flexDirection: 'row-reverse', alignItems: 'center', gap: 4, marginTop: 2}}>
+                                <Text style={[style.authorname, {fontSize: 12, color: '#666'}]}>{author?.fullname}</Text>
+                                {author?.verified && <SealCheck size={12} color="#FFB400" weight="fill" />}
+                                <Text style={[style.date, {marginLeft: 4}]}>• {timeAgo(created_at!)}</Text>
+                            </View>
+                        </View>
+                    ) : (
+                        <View>
+                            <View style={{flexDirection: 'row-reverse', alignItems: 'center', gap: 4}}>
+                                <Text style={[style.authorname]}>{author?.fullname}</Text>
+                                {author?.verified && <SealCheck size={14} color="#FFB400" weight="fill" />}
+                            </View>
+                            <Text style={[style.date]}>{timeAgo(created_at!)}</Text>
+                        </View>
+                    )}
                 </TouchableOpacity>
                 <TouchableOpacity style={{ height: 20, width: 20, justifyContent: "center", alignItems: "center"}} onPress={() => {ToastAndroid.show("Post options", ToastAndroid.SHORT)}}>
                     <Entypo name="dots-three-horizontal" size={14} color="black" />

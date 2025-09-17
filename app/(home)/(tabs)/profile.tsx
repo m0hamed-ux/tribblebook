@@ -67,7 +67,7 @@ export default function ProfileScreen() {
                             <Image source={{ uri: profile?.profile }} style={styles.image} />
                             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5 }}>
                                 <Text style={[styles.heading]}>{profile?.fullname}</Text>
-                                {!profile?.verified && <SealCheck size={15} color="#1D9BF0" weight="fill"/>}
+                                {profile?.verified && <SealCheck size={15} color="#1D9BF0" weight="fill"/>}
                             </View>
                             <Text style={[styles.subText]}>@{profile?.username}</Text>
                             
