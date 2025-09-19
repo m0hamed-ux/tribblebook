@@ -1,12 +1,12 @@
 import React, { useRef, useState } from "react";
 import {
-  View,
-  FlatList,
-  Image,
-  StyleSheet,
-  Dimensions,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
+    Dimensions,
+    FlatList,
+    Image,
+    NativeScrollEvent,
+    NativeSyntheticEvent,
+    StyleSheet,
+    View,
 } from "react-native";
 
 const { width } = Dimensions.get("window");

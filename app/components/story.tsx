@@ -1,26 +1,63 @@
-import { View , Text, TouchableOpacity} from "react-native";
-import { styles } from "@/assets/theme/styles";
-import { StyleSheet } from "react-native";
-import { Image } from "react-native";
 import { StoryProps } from "@/lib/database.module";
+import { useRouter } from 'expo-router';
 import { PlusCircle } from 'phosphor-react-native';
-export default function Story({image}: StoryProps) {
-  return(
-    <View style={style.container}>
-        <Image style={style.image} source={{uri: image}} />
-    </View>
-    
-  )
+import React, { useEffect, useRef } from 'react';
+import { Animated, Image, StyleSheet, TouchableOpacity, View } from "react-native";
+
+export default function Story({image, viewed}: StoryProps & { viewed?: boolean }) {
+    const scale = useRef(new Animated.Value(0.9)).current
+    useEffect(() => {
+        Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 5, tension: 80 }).start()
+    }, [])
+    return (
+        <Animated.View style={[style.container, { borderColor: viewed ? '#a9a9a9' : '#1D9BF0', transform: [{ scale }] }]}>
+            <Image style={style.image} source={{ uri: image }} />
+        </Animated.View>
+    )
 }
 
-export function MyStory({image}: StoryProps){
+
+export function MyStory(
+    {
+        image,
+        hasStories,
+        groupIndex,
+    }:
+    StoryProps & { hasStories?: boolean; groupIndex?: number }
+){
+    const router = useRouter();
     return(
-        <TouchableOpacity>
-            <View style={[style.container, {borderColor: '#a9a9a9ff'}]}>
-                <Image style={style.image} source={{uri: image}} />
-            </View>
-            <PlusCircle size={24} color="#1D9BF0" weight="fill" style={style.plusIcon} /> 
-        </TouchableOpacity>
+        <View>
+            {/* Tap on the bubble: if user already has stories, open the story viewer at this index; otherwise open add story */}
+            <TouchableOpacity
+                onPress={() => {
+                    if (hasStories) {
+                        router.push({ pathname: '/storyView', params: { index: String(groupIndex ?? 0) } })
+                    } else {
+                        router.push('/addStory')
+                    }
+                }}
+                activeOpacity={0.85}
+            >
+                <View style={[
+                    style.container,
+                    {
+                        borderColor: hasStories ? '#1D9BF0' : 'transparent',
+                        borderWidth: hasStories ? 3 : 0,
+                    }
+                ]}>
+                    <Image style={style.image} source={{uri: image}} />
+                </View>
+            </TouchableOpacity>
+            {/* Plus icon: always add story. Use its own touchable to prevent bubbling and ensure composer opens */}
+            <TouchableOpacity
+                onPress={() => router.push('/addStory')}
+                activeOpacity={0.9}
+                style={style.plusIcon}
+            >
+                <PlusCircle size={24} color="#1D9BF0" weight="fill" />
+            </TouchableOpacity>
+        </View>
     )
 }
 

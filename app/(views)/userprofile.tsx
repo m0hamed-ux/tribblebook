@@ -3,7 +3,7 @@ import { PostProps } from '@/lib/database.module';
 import { getUser, getUserPosts } from '@/lib/db';
 import { useUser } from '@clerk/clerk-expo';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ArrowLeft, Article, BookmarkSimple, List, LockKey, Repeat, SealCheck } from "phosphor-react-native";
+import { ArrowLeft, Article, List, LockKey, Repeat, SealCheck } from "phosphor-react-native";
 import { useCallback, useEffect, useState } from 'react';
 import { FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -124,7 +124,9 @@ export default function UserProfileScreen() {
                         title={item.title} 
                         content={item.content} 
                         created_at={new Date(typeof item.created_at === 'string' ? item.created_at.replace(/\.\d{6}/, '') : item.created_at!)} 
-                        images={item.images} 
+                        images={item.images}
+                        comment_count={item.comment_count} 
+                        links={item.links}
                         video={item.video}
                         author={item.author} 
                         likes={item.likes}

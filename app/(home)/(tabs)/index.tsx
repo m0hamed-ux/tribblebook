@@ -1,17 +1,17 @@
-import { SignedIn, SignedOut, useUser } from '@clerk/clerk-expo'
-import { Link, Redirect } from 'expo-router'
-import { Text, FlatList, Image, View, ToastAndroid } from 'react-native'
-import { SignOutButton } from '@/app/components/SignOutButton'
-import {styles} from '@/assets/theme/styles'
-import Story , {MyStory} from '@/app/components/story'
-import Post from '@/app/components/post'
-import { useCallback, useEffect, useState } from 'react'
 import Header from '@/app/components/header'
-import { getPosts } from '@/lib/db'
-import { PostProps } from '@/lib/database.module'
+import Post from '@/app/components/post'
+import Story, { MyStory } from '@/app/components/story'
+import { styles } from '@/assets/theme/styles'
+import { PostProps, StoryViewProps, UserProps } from '@/lib/database.module'
+import { getPosts, getStories } from '@/lib/db'
+import { SignedIn, SignedOut, useUser } from '@clerk/clerk-expo'
+import { Redirect, useRouter } from 'expo-router'
+import { useCallback, useEffect, useState } from 'react'
+import { FlatList, Text, TouchableOpacity, View } from 'react-native'
 
 export default function Page() {
   const { user } = useUser()
+  const router = useRouter()
   const data = [
     { id: "2", image : "https://images.unsplash.com/photo-1526779259212-939e64788e3c?fm=jpg&q=60&w=3000&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8NXx8ZnJlZSUyMGltYWdlc3xlbnwwfHwwfHx8MA%3D%3D" },
     { id: "3", image : "https://images.unsplash.com/photo-1526779259212-939e64788e3c?fm=jpg&q=60&w=3000&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8NXx8ZnJlZSUyMGltYWdlc3xlbnwwfHwwfHx8MA%3D%3D" },
@@ -23,12 +23,19 @@ export default function Page() {
   ]
   const [refreshing, setRefreshing] = useState(false); 
   const [posts, setPosts] = useState<PostProps[]>([]);
+  const [stories, setStories] = useState<Array<{ author: UserProps; stories: StoryViewProps[] }>>([])
 
   
   const loadData = useCallback(async () => {
     const data = await getPosts();
     setPosts(data);
-  }, []);
+    if (user?.id) {
+      const s = await getStories(user.id)
+      setStories(s)
+    } else {
+      setStories([])
+    }
+  }, [user?.id]);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadData();
@@ -58,7 +65,9 @@ export default function Page() {
               images={item.images} 
               video={item.video}
               author={item.author} 
+              links={item.links}
               community={item.community}
+              comment_count={item.comment_count}
               likes={item.likes}
               isLiked={item.likes?.some(like => like?.user_id?.username === user?.username)}
               isPlaying={activePostId === item.id!.toString()}
@@ -71,16 +80,52 @@ export default function Page() {
             <>
               <Header />
               <FlatList
-                data={data}
-                keyExtractor={(item) => item.id}
+                data={(() => {
+                  const meAuthor: UserProps = {
+                    username: user?.username || '',
+                    fullname: (user as any)?.fullName || user?.username || '',
+                    profile: user?.imageUrl || ''
+                  }
+                  const hasMine = stories.some(g => g.author.username === user?.username)
+                  const base = hasMine ? stories : ([{ author: meAuthor, stories: [] }] as Array<{ author: UserProps; stories: StoryViewProps[] }>).concat(stories)
+                  return [...base].sort((a, b) => {
+                    const aIsMe = a.author.username === user?.username
+                    const bIsMe = b.author.username === user?.username
+                    if (aIsMe && !bIsMe) return -1
+                    if (bIsMe && !aIsMe) return 1
+                    const aViewed = a.stories.every(s => s.isViewed)
+                    const bViewed = b.stories.every(s => s.isViewed)
+                    if (aViewed !== bViewed) return aViewed ? 1 : -1
+                    // tie-breaker: newest story recency
+                    const aLatest = a.stories[0]?.createdAt || ''
+                    const bLatest = b.stories[0]?.createdAt || ''
+                    return (new Date(bLatest).getTime() - new Date(aLatest).getTime())
+                  })
+                })()}
+                keyExtractor={(item) => item.author.username}
                 horizontal
                 inverted
                 initialNumToRender={5}
                 maxToRenderPerBatch={5}
                 removeClippedSubviews
                 showsHorizontalScrollIndicator={false}
-                ListHeaderComponent={<MyStory image={user?.imageUrl} />}
-                renderItem={({ item }) => <Story image={item.image} />}
+                renderItem={({ item, index }) => {
+                  const isMe = item.author.username === user?.username
+                  return (
+                    <View style={{ alignItems: 'center' }}>
+                      {isMe ? (
+                        <MyStory image={user?.imageUrl} hasStories={item.stories.length > 0} groupIndex={index} />
+                      ) : (
+                        <TouchableOpacity onPress={() => router.push({ pathname: '/storyView', params: { index: String(index) } })}>
+                          <Story image={item.author.profile} viewed={item.stories.every(s => s.isViewed)} />
+                        </TouchableOpacity>
+                      )}
+                      <Text style={{ fontSize: 10, color: '#555', marginTop: 4, maxWidth: 80 }} numberOfLines={1}>
+                        {isMe && item.stories.length === 0 ? 'قصتي' : item.author.username}
+                      </Text>
+                    </View>
+                  )
+                }}
                 contentContainerStyle={{ paddingVertical: 10 }}
               />
               <Text style={[styles.title, {fontSize: 18, color: "black", paddingHorizontal: 10, marginBottom: 5}]}>

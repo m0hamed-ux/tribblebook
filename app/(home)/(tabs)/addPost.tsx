@@ -1,8 +1,10 @@
 import theme, { styles as globalStyles } from '@/assets/theme/styles';
-import { createPost } from '@/lib/db';
+import type { CommunityProps } from '@/lib/database.module';
+import { createPost, getCommunity } from '@/lib/db';
 import { useUser } from '@clerk/clerk-expo';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import React, { useEffect, useState } from 'react';
 import {
@@ -17,7 +19,7 @@ import {
     TextInput,
     ToastAndroid,
     TouchableOpacity,
-    View
+    View,
 } from 'react-native';
 
 
@@ -65,8 +67,15 @@ interface MediaItem {
 
 export default function AddPostPage() {
     const { user } = useUser();
+    const params = useLocalSearchParams();
+    const communityId = (params?.communityId as string | undefined) ?? undefined;
+    const router = useRouter();
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
+    const [link, setLink] = useState('');
+    const [linkError, setLinkError] = useState('');
+    const [community, setCommunity] = useState<CommunityProps | null>(null);
+    const [communityLoading, setCommunityLoading] = useState(false);
     const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
     const [mediaType, setMediaType] = useState<'image' | 'video' | null>(null);
     const [isUploading, setIsUploading] = useState(false);
@@ -87,6 +96,27 @@ export default function AddPostPage() {
             videoPlayer.replace(mediaItems[0].uri);
         }
     }, [mediaItems, mediaType]);
+
+    // Fetch community details if communityId is present
+    useEffect(() => {
+        const run = async () => {
+            if (!communityId) return;
+            try {
+                setCommunityLoading(true);
+                const c = await getCommunity(communityId);
+                if (c && typeof c === 'object') {
+                    setCommunity(c as CommunityProps);
+                } else {
+                    setCommunity(null);
+                }
+            } catch (e) {
+                setCommunity(null);
+            } finally {
+                setCommunityLoading(false);
+            }
+        };
+        run();
+    }, [communityId]);
 
     const uploadToCloudinary = async (uri: string, type: 'image' | 'video'): Promise<string | null> => {
         try {
@@ -203,6 +233,15 @@ export default function AddPostPage() {
             return;
         }
 
+        // Validate optional link
+        if (link.trim()) {
+            const urlReg = /^(https?:\/\/)([\w-]+\.)+[\w-]{2,}(\/\S*)?$/i;
+            if (!urlReg.test(link.trim())) {
+                setLinkError('الرجاء إدخال رابط صحيح يبدأ بـ http أو https');
+                return;
+            }
+        }
+
         setIsUploading(true);
 
         try {
@@ -245,7 +284,8 @@ export default function AddPostPage() {
                 user.id,
                 uploadedImages.length > 0 ? uploadedImages : undefined,
                 uploadedVideo,
-                undefined // links
+                link.trim() ? link.trim() : undefined, // links
+                communityId
             );
 
             if (result) {
@@ -255,6 +295,14 @@ export default function AddPostPage() {
                 setContent('');
                 setMediaItems([]);
                 setMediaType(null);
+                setLink('');
+                setLinkError('');
+                setCommunity(null);
+                setCommunityLoading(false);
+                // If posting to a community, navigate back to that community screen explicitly
+                if (communityId) {
+                    router.replace(`/(views)/community?id=${communityId}`);
+                }
             } else {
                 Alert.alert('خطأ', 'فشل في نشر المنشور. يرجى المحاولة مرة أخرى');
             }
@@ -314,7 +362,25 @@ export default function AddPostPage() {
 
     return (
         <ScrollView style={[globalStyles.container, styles.container]}>
-            <Text style={styles.pageTitle}>إنشاء منشور جديد</Text>
+            <Text style={globalStyles.title}>إنشاء منشور جديد</Text>
+
+            {communityId ? (
+                <View style={styles.communityCard}>
+                    <Image
+                        source={{ uri: community?.profile || undefined }}
+                        style={styles.communityAvatar}
+                    />
+                    <View style={{ flex: 1 }}>
+                        <Text style={styles.communityBadge}>مجتمع</Text>
+                        <Text style={styles.communityNameBanner} numberOfLines={1}>
+                            {communityLoading ? 'جاري تحميل المجتمع...' : (community?.name || 'المجتمع')}
+                        </Text>
+                    </View>
+                    {communityLoading ? (
+                        <ActivityIndicator size="small" color={theme.colors.primary} />
+                    ) : null}
+                </View>
+            ) : null}
 
             {/* Title Input */}
             <View style={styles.inputContainer}>
@@ -346,6 +412,27 @@ export default function AddPostPage() {
                 />
             </View>
 
+            {/* Link Input */}
+            <View style={styles.inputContainer}>
+                <Text style={styles.label}>رابط (اختياري)</Text>
+                <TextInput
+                    style={[globalStyles.input, styles.linkInput, linkError ? { borderColor: theme.colors.error } : null]}
+                    value={link}
+                    onChangeText={(t) => { setLink(t); setLinkError(''); }}
+                    placeholder="https://example.com"
+                    placeholderTextColor={theme.colors.text.muted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                    textAlign="right"
+                />
+            </View>
+            {linkError ? (
+                <Text style={{ color: theme.colors.error, fontSize: 12, textAlign: 'right', marginTop: -8, marginBottom: 8, fontFamily: 'regular' }}>
+                    {linkError}
+                </Text>
+            ) : null}
+
             {/* Media Section */}
             <View style={styles.mediaContainer}>
                 <Text style={styles.label}>الوسائط</Text>
@@ -355,7 +442,7 @@ export default function AddPostPage() {
                         style={styles.addMediaButton}
                         onPress={() => setShowMediaPicker(true)}
                     >
-                        <Ionicons name="add-circle-outline" size={48} color={theme.colors.primary} />
+                        <Ionicons name="add-circle-outline" size={36} color={theme.colors.primary} />
                         <Text style={styles.addMediaText}>إضافة صور أو فيديو</Text>
                     </TouchableOpacity>
                 ) : (
@@ -409,18 +496,13 @@ export default function AddPostPage() {
 
             {/* Submit Button */}
             <TouchableOpacity
-                style={[globalStyles.buttonPrimary, styles.submitButton, isUploading && styles.disabledButton]}
+                style={[styles.submitButton, isUploading && styles.disabledButton]}
                 onPress={handleSubmit}
                 disabled={isUploading || !title.trim()}
             >
-                {isUploading ? (
-                    <View style={styles.loadingContainer}>
-                        <ActivityIndicator color="#FFFFFF" size="small" />
-                        <Text style={styles.submitButtonText}>جاري النشر...</Text>
-                    </View>
-                ) : (
-                    <Text style={styles.submitButtonText}>نشر المنشور</Text>
-                )}
+                <Text style={globalStyles.buttonPrimary}>
+                    {isUploading ? 'جارٍ النشر...' : 'نشر المنشور'}
+                </Text>
             </TouchableOpacity>
 
             <MediaPickerModal />
@@ -432,54 +514,48 @@ const { width } = Dimensions.get('window');
 
 const styles = StyleSheet.create({
     container: {
-        paddingTop: 20,
-    },
-    pageTitle: {
-        fontSize: 25,
-        // fontfamily: 'bold',
-        color: theme.colors.primary,
-        textAlign: 'center',
-        marginBottom: 30,
-        fontFamily: 'bold',
+        paddingTop: 16,
     },
     inputContainer: {
-        marginBottom: 20,
+        marginBottom: 16,
     },
     label: {
-        fontSize: 16,
-        // fontWeight: '600',
-        color: theme.colors.text.primary,
-        marginBottom: 8,
+        fontSize: 14,
+        color: theme.colors.text.secondary,
+        marginBottom: 6,
         textAlign: 'right',
-        fontFamily: 'bold',
+        fontFamily: 'regular',
     },
     titleInput: {
-        fontSize: 18,
-        fontWeight: '500',
+        fontSize: 16,
         borderRadius: 8,
     },
     contentInput: {
         height: 120,
-        fontSize: 16,
+        fontSize: 14,
+        borderRadius: 8,
+    },
+    linkInput: {
+        fontSize: 14,
         borderRadius: 8,
     },
     mediaContainer: {
-        marginBottom: 30,
+        marginBottom: 24,
     },
     addMediaButton: {
-        borderWidth: 2,
+        borderWidth: 1,
         borderColor: theme.colors.primary,
         borderStyle: 'dashed',
         borderRadius: 12,
-        padding: 40,
+        padding: 24,
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: theme.colors.surface,
     },
     addMediaText: {
-        fontSize: 16,
+        fontSize: 14,
         color: theme.colors.primary,
-        marginTop: 8,
+        marginTop: 6,
         fontFamily: 'regular',
         textAlign: 'center',
     },
@@ -529,20 +605,50 @@ const styles = StyleSheet.create({
     changeMediaText: {
         color: theme.colors.primary,
         fontSize: 14,
-        fontWeight: '500',
         fontFamily: 'regular',
     },
     submitButton: {
-        marginTop: 20,
-        marginBottom: 40,
-        minHeight: 50,
+        marginTop: 16,
+        marginBottom: 32,
+        minHeight: 48,
         justifyContent: 'center',
     },
-    submitButtonText: {
-        fontSize: 18,
-        // fontWeight: 'bold',
-        color: '#FFFFFF',
+    communityCard: {
+        flexDirection: 'row-reverse',
+        alignItems: 'center',
+        gap: 10,
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        borderRadius: 10,
+        backgroundColor: theme.colors.surface,
+        borderWidth: 1,
+        borderColor: '#eaeaea',
+        marginBottom: 12,
+    },
+    communityAvatar: {
+        width: 36,
+        height: 36,
+        borderRadius: 8,
+        backgroundColor: '#ddd',
+        marginLeft: 8,
+    },
+    communityBadge: {
+        alignSelf: 'flex-end',
+        backgroundColor: '#eaf4ff',
+        color: theme.colors.primary,
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 6,
+        fontFamily: 'regular',
+        fontSize: 10,
+        marginBottom: 2,
+        textAlign: 'right',
+    },
+    communityNameBanner: {
         fontFamily: 'bold',
+        fontSize: 14,
+        color: theme.colors.text.primary,
+        textAlign: 'right',
     },
     disabledButton: {
         opacity: 0.6,
@@ -551,6 +657,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
+        gap: 8 as any,
     },
     modalOverlay: {
         flex: 1,
@@ -561,42 +668,40 @@ const styles = StyleSheet.create({
         backgroundColor: '#FFFFFF',
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
-        padding: 24,
-        paddingBottom: 40,
+        padding: 20,
+        paddingBottom: 32,
     },
     modalTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
+        fontSize: 18,
         color: theme.colors.text.primary,
         textAlign: 'center',
-        marginBottom: 24,
+        marginBottom: 16,
         fontFamily: 'bold',
     },
     mediaOption: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 16,
+        padding: 14,
         backgroundColor: theme.colors.surface,
         borderRadius: 12,
-        marginBottom: 12,
+        marginBottom: 10,
     },
     mediaOptionText: {
-        fontSize: 16,
+        fontSize: 14,
         color: theme.colors.text.primary,
-        marginLeft: 12,
+        marginLeft: 10,
         fontFamily: 'regular',
     },
     cancelButton: {
-        padding: 16,
+        padding: 14,
         backgroundColor: theme.colors.error,
         borderRadius: 12,
         marginTop: 8,
     },
     cancelButtonText: {
-        fontSize: 16,
+        fontSize: 14,
         color: '#FFFFFF',
         textAlign: 'center',
-        fontWeight: 'bold',
         fontFamily: 'bold',
     },
 });

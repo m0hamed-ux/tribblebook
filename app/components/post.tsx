@@ -1,13 +1,13 @@
-import { CommentProps, UserProps, CommunityProps } from '@/lib/database.module';
+import { CommentProps, CommunityProps, UserProps } from '@/lib/database.module';
 import { timeAgo } from '@/lib/date';
-import { getPostComments, handleLike } from '@/lib/db';
+import { createComment, getPostComments, getUser, handleCommentLike, handleCommentUnlike, handleLike } from '@/lib/db';
 import { useUser } from '@clerk/clerk-expo';
 import Entypo from '@expo/vector-icons/Entypo';
 import { useRouter } from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { BookmarkSimple, ChatCircle, Heart, Repeat, SealCheck, ShareFat } from 'phosphor-react-native';
-import { useEffect, useState } from 'react';
-import { Image, Modal, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, TouchableOpacity, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Image, Linking, Modal, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, TouchableOpacity, View } from 'react-native';
 import Carousel from './carousel';
 import Comment from './comment';
 import ExpandableText from './ExpandableText';
@@ -26,9 +26,10 @@ export interface PostProps {
     isLiked?: boolean,
     isPlaying?: boolean,
     onPlay?: () => void,
+    comment_count?: number
 }
 
-export default function Post({id, author, title, content, images, video, community, created_at, likes, isLiked, isPlaying, onPlay}: PostProps){
+export default function Post({id, author, title, content, images, video, community, created_at, likes, isLiked, isPlaying, onPlay, links, comment_count}: PostProps){
     const { user } = useUser();
     const router = useRouter();
     const [commentVisible, setCommentVisible] = useState(false);
@@ -37,7 +38,34 @@ export default function Post({id, author, title, content, images, video, communi
     const [likesCount, setLikesCount] = useState(likes?.length ?? 0);
     const [Comments, setComments] = useState<Array<CommentProps> | null>(null);
     const [loadingComments, setLoadingComments] = useState(false);
+    const [profile, setProfile] = useState<any>(null);
+    const [commentText, setCommentText] = useState('');
+    const [postingComment, setPostingComment] = useState(false);
+    const [replyTo, setReplyTo] = useState<{ parentId: number | null, username: string | null }>({ parentId: null, username: null });
+    const commentInputRef = useRef<TextInput>(null);
+    const currentUsername = user?.username;
+
+    const reloadComments = async () => {
+        try {
+            setLoadingComments(true);
+            const fetched = await getPostComments(id!);
+            setComments(Array.isArray(fetched) ? fetched : []);
+        } catch (e) {
+            setComments([]);
+        } finally {
+            setLoadingComments(false);
+        }
+    };
     
+    useEffect(() => {
+        const fetchProfile = async () => {
+            if (author?.username) {
+                const fetchedProfile = await getUser(author.username);
+                setProfile(fetchedProfile);
+            }
+        };
+        fetchProfile();
+    }, [author?.username]);
     // Update local state when isLiked prop changes
     useEffect(() => {
         setLiked(isLiked ?? false);
@@ -130,16 +158,127 @@ export default function Post({id, author, title, content, images, video, communi
             router.push(`/(views)/userprofile?username=${author.username}`);
         }
     };
+    const navigateToCommunity = () => {
+        if (community?.id != null) {
+            router.push(`/(views)/community?id=${community.id}`);
+        }
+    };
     console.log("community:", community)
+
+    const handlePublishComment = async () => {
+        if (!user || !user.id || !id) {
+            ToastAndroid.show('يرجى تسجيل الدخول أولاً', ToastAndroid.SHORT);
+            router.push('/(auth)/sign-in');
+            return;
+        }
+
+        const text = commentText.trim();
+        if (!text) {
+            ToastAndroid.show('لا يمكن إرسال تعليق فارغ', ToastAndroid.SHORT);
+            return;
+        }
+        if (text.length > 100) {
+            ToastAndroid.show('الحد الأقصى للتعليق 100 حرف', ToastAndroid.SHORT);
+            return;
+        }
+
+        try {
+            setPostingComment(true);
+            const newComment = await createComment(String(id), text, user.id, replyTo.parentId ?? undefined, replyTo.username ?? undefined);
+            if (!newComment) {
+                ToastAndroid.show('فشل نشر التعليق', ToastAndroid.SHORT);
+                return;
+            }
+            // Clear input and reply context
+            setCommentText('');
+            setReplyTo({ parentId: null, username: null });
+            // Re-fetch to ensure proper author details and nesting
+            await reloadComments();
+            ToastAndroid.show('تم نشر التعليق', ToastAndroid.SHORT);
+        } catch (e) {
+            ToastAndroid.show('حدث خطأ أثناء نشر التعليق', ToastAndroid.SHORT);
+        } finally {
+            setPostingComment(false);
+        }
+    };
+
+    const updateLikesInTree = (list: Array<CommentProps>, targetId: number, liked: boolean): Array<CommentProps> => {
+        return list.map((c) => {
+            if (!c) return c;
+            if (c.id === targetId) {
+                let likes = Array.isArray(c.likes) ? [...c.likes] : [];
+                if (liked) {
+                    if (currentUsername && !likes.some(l => (l?.user_id as any)?.username === currentUsername)) {
+                        likes.push({ user_id: { username: currentUsername } as any });
+                    }
+                } else {
+                    if (currentUsername) {
+                        likes = likes.filter(l => (l?.user_id as any)?.username !== currentUsername);
+                    }
+                }
+                return { ...c, likes } as CommentProps;
+            }
+            if (Array.isArray(c.replies) && c.replies.length) {
+                const newReplies = updateLikesInTree(c.replies.filter((r): r is CommentProps => r !== null), targetId, liked);
+                return { ...c, replies: newReplies } as CommentProps;
+            }
+            return c;
+        });
+    };
+
+    const handleToggleCommentLike = async (commentId: number) => {
+        if (!user?.id) {
+            ToastAndroid.show('يرجى تسجيل الدخول أولاً', ToastAndroid.SHORT);
+            router.push('/(auth)/sign-in');
+            return;
+        }
+        const findInTree = (list: Array<CommentProps>): CommentProps | undefined => {
+            for (const c of list) {
+                if (!c) continue;
+                if (c.id === commentId) return c;
+                if (Array.isArray(c.replies) && c.replies.length) {
+                    const found = findInTree(c.replies.filter((r): r is CommentProps => r !== null));
+                    if (found) return found;
+                }
+            }
+            return undefined;
+        };
+        const current = Comments ? findInTree(Comments) : undefined;
+        const alreadyLiked = !!(current && currentUsername && Array.isArray(current.likes) && current.likes.some(l => (l?.user_id as any)?.username === currentUsername));
+
+        if (Comments) {
+            setComments(updateLikesInTree(Comments, commentId, !alreadyLiked));
+        }
+        try {
+            if (alreadyLiked) {
+                const res = await handleCommentUnlike(commentId, user.id);
+                if (res === null) throw new Error('unlike failed');
+            } else {
+                const res = await handleCommentLike(commentId, user.id);
+                if (res === null) throw new Error('like failed');
+            }
+        } catch (e) {
+            if (Comments) {
+                setComments(updateLikesInTree(Comments, commentId, alreadyLiked));
+            }
+            ToastAndroid.show('فشل تحديث الإعجاب', ToastAndroid.SHORT);
+        }
+    };
 
     return (
         <View style={style.constainer}>
             <View style={style.author}>
-                <TouchableOpacity onPress={navigateToUserProfile}>
-                    <Image source={{uri: community?.profile}} style={{width: 40, height: 40, borderRadius: 10}} />
-                    <Image source={{uri: author?.profile}} style={{width: 20, height: 20, borderRadius: 25, position: "absolute", bottom: -5, left:-5}} />
+                <TouchableOpacity onPress={community ? navigateToCommunity : navigateToUserProfile}>
+                    {community ? (
+                        <>
+                        <Image source={{uri: community?.profile}} style={{width: 40, height: 40, borderRadius: 10}} />
+                        <Image source={{uri: author?.profile}} style={{width: 20, height: 20, borderRadius: 25, position: "absolute", bottom: -5, left:-5}} />
+                        </>
+                    ) : (
+                        <Image source={{uri: author?.profile}} style={{width: 40, height: 40, borderRadius: 25}} />
+                    )}
                 </TouchableOpacity>
-                <TouchableOpacity style={{flex: 1}} id='name' onPress={navigateToUserProfile}>
+                <TouchableOpacity style={{flex: 1}} id='name' onPress={community ? navigateToCommunity : navigateToUserProfile}>
                     {community ? (
                         <View>
                             <View style={{flexDirection: 'row-reverse', alignItems: 'center', gap: 4}}>
@@ -198,6 +337,25 @@ export default function Post({id, author, title, content, images, video, communi
                     </TouchableOpacity>
                 </View>
             )}
+            
+            {links && (
+                <View style={{paddingHorizontal: 8, marginTop: 8}}>
+                    <TouchableOpacity
+                        onPress={() => {
+                            if (links.startsWith('http://') || links.startsWith('https://')) {
+                                Linking.openURL(links).catch(err => console.error('Failed to open URL:', err));
+                            }
+                        }}
+                        style={{flexDirection: 'row-reverse', alignItems: 'center', gap: 4}}
+                        activeOpacity={0.7}
+                    >
+                        <Text style={{fontFamily: 'bold', fontSize: 14, color: '#1D9BF0', textAlign: 'right', textDecorationLine: 'underline'}}>
+                            {links.slice(0, 20)}{links.length > 20 ? '...' : ''}
+                        </Text>
+                        <Entypo name="link" size={14} color="#1D9BF0" />
+                    </TouchableOpacity>
+                </View>
+            )}
 
             <View style={{flexDirection: 'row-reverse', paddingVertical: 8, marginTop: 5}}>
                 <TouchableOpacity onPress={toggleLike} style={style.reactionIcon}>
@@ -206,10 +364,10 @@ export default function Post({id, author, title, content, images, video, communi
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => setCommentVisible(true)} style={style.reactionIcon}>
                     <ChatCircle size={24} color="#7b7b7bff" />
-                    <Text style={{color: "#7b7b7bff"}}>{Comments?.length || 0}</Text>
+                    <Text style={{color: "#7b7b7bff"}}>{comment_count || 0}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={style.reactionIcon}><ShareFat size={24} color="#7b7b7bff" /><Text style={{color: "#7b7b7bff"}}>0</Text></TouchableOpacity>
-                <TouchableOpacity style={style.reactionIcon}><Repeat size={24} color="#7b7b7bff" /><Text style={{color: "#7b7b7bff"}}>0</Text></TouchableOpacity>
+                <TouchableOpacity style={style.reactionIcon}><ShareFat size={24} color="#7b7b7bff" /><Text style={{color: "#7b7b7bff"}}></Text></TouchableOpacity>
+                <TouchableOpacity style={style.reactionIcon}><Repeat size={24} color="#7b7b7bff" /><Text style={{color: "#7b7b7bff"}}></Text></TouchableOpacity>
                 <TouchableOpacity style={style.reactionIcon}><BookmarkSimple size={24} color="#7b7b7bff" /></TouchableOpacity>
             </View>
 
@@ -224,7 +382,7 @@ export default function Post({id, author, title, content, images, video, communi
                         setLoadingComments(true);
                         try {
                             const fetchedComments = await getPostComments(id!);
-                            setComments(fetchedComments || []);
+                            setComments(Array.isArray(fetchedComments) ? fetchedComments : []);
                         } catch (error) {
                             console.log("Error fetching comments:", error);
                             setComments([]);
@@ -248,12 +406,10 @@ export default function Post({id, author, title, content, images, video, communi
                             <Comment 
                                 comments={Comments} 
                                 onReply={(commentId, username) => {
-                                    ToastAndroid.show(`رد على ${username}`, ToastAndroid.SHORT);
-                                    // You can add reply functionality here
+                                    setReplyTo({ parentId: commentId, username });
+                                    setTimeout(() => commentInputRef.current?.focus(), 50);
                                 }}
-                                onLike={(commentId) => {
-                                    ToastAndroid.show("تم الإعجاب بالتعليق", ToastAndroid.SHORT);
-                                }}
+                                onLike={handleToggleCommentLike}
                                 onUserPress={(username) => {
                                     router.push(`/(views)/userprofile?username=${username}`);
                                 }}
@@ -269,20 +425,35 @@ export default function Post({id, author, title, content, images, video, communi
                             </View>
                         )}
                     </ScrollView>
+                    {replyTo.parentId ? (
+                        <View style={style.replyBadge}>
+                            <Text style={style.replyBadgeText}>الرد على @{replyTo.username}</Text>
+                            <TouchableOpacity onPress={() => setReplyTo({ parentId: null, username: null })}>
+                                <Text style={style.replyBadgeClear}>إلغاء</Text>
+                            </TouchableOpacity>
+                        </View>
+                    ) : null}
                     <View style={style.commentInput}>
                         <Image
-                            source={{uri: user?.imageUrl}}
+                            source={{uri: profile?.profile}}
                             style={{width: 40, height: 40, borderRadius: 20, marginRight: 8}}
                         />
                         <TextInput
-                            placeholder="أضف تعليق..."
+                            ref={commentInputRef}
+                            placeholder={replyTo.username ? `الرد على @${replyTo.username}` : 'أضف تعليق...'}
                             placeholderTextColor={'#888888'}
                             style={{backgroundColor: '#ddddddff', flex: 1, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, fontFamily: 'regular'}}
                             multiline
                             numberOfLines={1}
                             textAlignVertical="top"
                             textAlign='right'
+                            value={commentText}
+                            onChangeText={setCommentText}
+                            maxLength={100}
                          />
+                        <TouchableOpacity onPress={handlePublishComment} disabled={postingComment} style={{padding: 8, opacity: postingComment ? 0.6 : 1}}>
+                            <Text style={{color: '#1D9BF0', fontFamily: 'bold'}}>{postingComment ? 'جاري النشر...' : 'نشر'}</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
             </Modal>
@@ -339,12 +510,35 @@ const style = StyleSheet.create({
         backgroundColor: 'white',
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
-        padding: 16,
+        padding: 5,
+        paddingBottom: 10,
     },
     commentInput: {
         flexDirection: 'row-reverse',
         alignItems: 'center',
         gap: 8,
         borderTopColor: '#c3c3c3ce',
+    }
+    ,
+    replyBadge: {
+        flexDirection: 'row-reverse',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        marginHorizontal: 8,
+        marginBottom: 6,
+        borderRadius: 8,
+        backgroundColor: '#f2f7ff',
+    },
+    replyBadgeText: {
+        fontFamily: 'regular',
+        color: '#1D9BF0',
+        fontSize: 12,
+    },
+    replyBadgeClear: {
+        fontFamily: 'bold',
+        color: '#ff3b30',
+        fontSize: 12,
     }
 });

@@ -47,7 +47,9 @@ export default function ProfileScreen() {
                         created_at={new Date(typeof item.created_at === 'string' ? item.created_at.replace(/\.\d{6}/, '') : item.created_at!)} 
                         images={item.images} 
                         video={item.video}
+                        links={item.links}
                         author={item.author} 
+                        community={item.community}
                         likes={item.likes}
                         isLiked={item.likes?.some(like => like?.user_id?.username === user?.username)}
                         isPlaying={activePostId === item.id!.toString()}

@@ -61,8 +61,10 @@ export default function WatchScreen() {
     // Hide status bar for immersive experience
     useEffect(() => {
         StatusBar.setBackgroundColor('#000');
+        StatusBar.setBarStyle('light-content');
         return () => {
             StatusBar.setBackgroundColor('#FFFFFF');
+            StatusBar.setBarStyle('dark-content');
         };
     }, []);
 

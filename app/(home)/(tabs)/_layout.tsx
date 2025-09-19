@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { House, User, Compass, PlusCircle, MonitorPlay } from 'phosphor-react-native';
+import { Compass, House, MonitorPlay, PlusCircle, User } from 'phosphor-react-native';
 export default function TabLayout() {
     return (
         <Tabs screenOptions={({ route }) => ({

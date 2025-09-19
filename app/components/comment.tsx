@@ -1,5 +1,6 @@
 import { CommentProps } from '@/lib/database.module';
 import { timeAgo } from '@/lib/date';
+import { useUser } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
 import { Heart } from 'phosphor-react-native';
 import { useState } from 'react';
@@ -10,10 +11,13 @@ interface CommentComponentProps {
     onReply?: (commentId: number, username: string) => void;
     onLike?: (commentId: number) => void;
     onUserPress?: (username: string) => void;
+    // If provided, indicates the top-level parent id for any nested replies in this list
+    rootId?: number;
 }
 
-export default function Comment({ comments, onReply, onLike, onUserPress }: CommentComponentProps) {
+export default function Comment({ comments, onReply, onLike, onUserPress, rootId }: CommentComponentProps) {
     const router = useRouter();
+    const { user } = useUser();
     const [showReplies, setShowReplies] = useState<{ [key: number]: boolean }>({});
 
     const handleUserPress = (username: string) => {
@@ -38,7 +42,7 @@ export default function Comment({ comments, onReply, onLike, onUserPress }: Comm
                 <View key={comment.id}>
                     <View style={{ flex: 1, padding: 1, flexDirection: "row-reverse", gap: 10, borderBottomColor: '#eee' }}>
                         <TouchableOpacity onPress={() => handleUserPress(comment.author.username)}>
-                            <Image style={style.profileImage} src={comment.author.profile} />
+                            <Image style={style.profileImage} source={{ uri: comment.author.profile }} />
                         </TouchableOpacity>
                         <View style={{ flex: 1 }}>
                             <TouchableOpacity onPress={() => handleUserPress(comment.author.username)}>
@@ -55,25 +59,32 @@ export default function Comment({ comments, onReply, onLike, onUserPress }: Comm
                             <View style={{ flexDirection: 'row-reverse', justifyContent: 'flex-start', alignItems: 'center', gap: 20, marginTop: 5 }}>
                                 <TouchableOpacity
                                     style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 5, marginTop: 5 }}
-                                    onPress={() => onReply?.(comment.id, comment.author.username)}
+                                    // When replying to a reply, use the top-level parent's id as parentId
+                                    onPress={() => onReply?.(rootId ?? comment.id, comment.author.username)}
                                 >
                                     <Text style={{ fontFamily: 'regular', fontSize: 14, color: '#888' }}>
                                         رد
                                     </Text>
                                 </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 5 }}
-                                    onPress={() => onLike?.(comment.id)}
-                                >
-                                    <Text style={{ fontFamily: 'regular', fontSize: 14, color: '#888' }}>
-                                        0
-                                    </Text>
-                                    <Heart size={16} color="#888" />
-                                </TouchableOpacity>
+                                {(() => {
+                                    const likeCount = Array.isArray(comment.likes) ? comment.likes.filter((l) => l !== null).length : 0;
+                                    const isLiked = Boolean(user?.username && Array.isArray(comment.likes) && comment.likes.some((l) => l?.user_id?.username === user.username));
+                                    return (
+                                        <TouchableOpacity
+                                            style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 5 }}
+                                            onPress={() => onLike?.(comment.id)}
+                                        >
+                                            <Text style={{ fontFamily: 'regular', fontSize: 14, color: '#888' }}>
+                                                {likeCount}
+                                            </Text>
+                                            <Heart size={16} color={isLiked ? '#ff0000' : '#888'} weight={isLiked ? 'fill' : 'regular'} />
+                                        </TouchableOpacity>
+                                    );
+                                })()}
                             </View>
                         </View>
                     </View>
-                    {comment.replies && comment.replies.length && (
+                    {comment.replies && comment.replies.length > 0 && (
                         <View style={{ marginRight: 50 }}>
                             <TouchableOpacity
                                 onPress={() => setShowReplies(prev => ({ ...prev, [comment.id]: !prev[comment.id] }))}
@@ -85,10 +96,12 @@ export default function Comment({ comments, onReply, onLike, onUserPress }: Comm
                             </TouchableOpacity>
                             {showReplies[comment.id] && (
                                 <Comment
-                                    comments={comment.replies.filter((reply): reply is CommentProps => reply !== null)}
+                                    comments={comment.replies.filter((reply: CommentProps | null): reply is CommentProps => reply !== null)}
                                     onReply={onReply}
                                     onLike={onLike}
                                     onUserPress={onUserPress}
+                                    // Propagate the top-level parent's id down the tree
+                                    rootId={rootId ?? comment.id}
                                 />
                             )}
                         </View>
