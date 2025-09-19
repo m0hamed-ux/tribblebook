@@ -213,6 +213,7 @@ export default function CommunityScreen() {
                 images={post.images}
                 video={post.video}
                 links={post.links}
+                reposted_post={post.reposted_post}
                 comment_count={post.comment_count}
                 created_at={new Date(typeof post.created_at === 'string' ? post.created_at.replace(/\.\d{6}/, '') : post.created_at!)}
                 likes={post.likes}

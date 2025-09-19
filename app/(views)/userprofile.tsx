@@ -129,6 +129,7 @@ export default function UserProfileScreen() {
                         links={item.links}
                         video={item.video}
                         author={item.author} 
+                        reposted_post={item.reposted_post}
                         likes={item.likes}
                         isLiked={item.likes?.some(like => like?.user_id?.username === user?.username)}
                         isPlaying={activePostId === item.id!.toString()}

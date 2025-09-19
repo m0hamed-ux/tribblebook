@@ -132,7 +132,7 @@ export async function getUser(username: string){
     }
 }
 
-export async function createPost(title: string, content: string, userId: string, images?: string[], video?: string, links?: string, community?: string | number){
+export async function createPost(title: string, content: string, userId: string, images?: string[], video?: string, links?: string, community?: string | number, reposted_post: string | number | null = null){
     try{
         const response = await fetch("https://tribblebook-backend.onrender.com/create/post", {
             method: 'POST',
@@ -140,7 +140,7 @@ export async function createPost(title: string, content: string, userId: string,
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${userId}`
             },
-                body: JSON.stringify({ title, content, images, video, links, community, communityId: community })
+                body: JSON.stringify({ title, content, images, video, links, community, communityId: community, reposted_post })
         })
         if(response.ok){
             const data = await response.json()
@@ -261,6 +261,28 @@ export async function getTrendingPosts(){
     } catch (error) {
         console.log(error)
         return []
+    }
+}
+
+export async function deletePost(postId: string | number, userId: string) {
+    try {
+        const response = await fetch(`https://tribblebook-backend.onrender.com/posts/${postId}` , {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${userId}`
+            }
+        })
+        if (response.ok) {
+            const data = await response.json()
+            return data as { success: boolean; message?: string }
+        } else {
+            const body = await safeReadText(response)
+            console.log("delete post failed:", response.status, response.statusText, body)
+            return null
+        }
+    } catch (error) {
+        console.log("delete post error:", error)
+        return null
     }
 }
 

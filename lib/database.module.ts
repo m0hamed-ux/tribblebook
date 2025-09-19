@@ -37,6 +37,7 @@ export interface PostProps {
     isLiked?: boolean,
     comment_count?: number,
     community?: CommunityProps | null,
+    reposted_post?: PostProps  
 }
 
 export interface CommentProps {

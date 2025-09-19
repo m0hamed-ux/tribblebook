@@ -35,7 +35,7 @@ export default function ProfileScreen() {
     return (
         <View style={{flex: 1, backgroundColor: "white"}}>
             <FlatList
-                data={activeTab === 'posts' ? userPosts : []}
+                data={activeTab === 'posts' ? userPosts : activeTab === 'reposts' ? userPosts.filter(post => post.reposted_post) : []}
                 keyExtractor={(item) => item.id!.toString()}
                 showsVerticalScrollIndicator={false}
                 onScrollBeginDrag={() => {setActivePostId(null)}}
@@ -50,6 +50,7 @@ export default function ProfileScreen() {
                         links={item.links}
                         author={item.author} 
                         community={item.community}
+                        reposted_post={item.reposted_post}
                         likes={item.likes}
                         isLiked={item.likes?.some(like => like?.user_id?.username === user?.username)}
                         isPlaying={activePostId === item.id!.toString()}

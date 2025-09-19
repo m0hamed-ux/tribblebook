@@ -1,15 +1,13 @@
 import React, { useRef, useState } from "react";
 import {
-    Dimensions,
-    FlatList,
-    Image,
-    NativeScrollEvent,
-    NativeSyntheticEvent,
-    StyleSheet,
-    View,
+  FlatList,
+  Image,
+  LayoutChangeEvent,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  StyleSheet,
+  View,
 } from "react-native";
-
-const { width } = Dimensions.get("window");
 
 interface CarouselProps {
   images: string[];
@@ -17,26 +15,35 @@ interface CarouselProps {
 
 const Carousel: React.FC<CarouselProps> = ({ images }) => {
   const [activeIndex, setActiveIndex] = useState(0);
+  const [containerWidth, setContainerWidth] = useState(0);
   const flatListRef = useRef<FlatList<string>>(null);
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const slide = Math.round(event.nativeEvent.contentOffset.x / width);
+    const layoutWidth = event.nativeEvent.layoutMeasurement?.width || 1;
+    const slide = Math.round(event.nativeEvent.contentOffset.x / layoutWidth);
     if (slide !== activeIndex) {
       setActiveIndex(slide);
     }
   };
 
+  const onLayout = (e: LayoutChangeEvent) => {
+    const w = e.nativeEvent.layout.width;
+    if (w && w !== containerWidth) setContainerWidth(w);
+  };
+
   return (
-    <View>
-      <FlatList
+    <View style={styles.container} onLayout={onLayout}>
+      {containerWidth > 0 && (
+        <FlatList
         ref={flatListRef}
         data={images}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
+        style={{ height: containerWidth, width: "100%" }}
         keyExtractor={(_, index) => index.toString()}
         renderItem={({ item }) => (
-          <View style={styles.imageContainer}>
+          <View style={[styles.imageContainer, { width: containerWidth, height: containerWidth }]}>
             {/* Blurred background */}
             <Image
               source={{ uri: item }}
@@ -55,6 +62,7 @@ const Carousel: React.FC<CarouselProps> = ({ images }) => {
         onScroll={handleScroll}
         scrollEventThrottle={16}
       />
+      )}
 
       {/* Pagination dots */}
       {images.length > 1 && (
@@ -75,9 +83,11 @@ const Carousel: React.FC<CarouselProps> = ({ images }) => {
 };
 
 const styles = StyleSheet.create({
+  container: {
+    width: "100%",
+  },
   imageContainer: {
-    width: width,
-    height: width,
+    // width and height are set dynamically from measured containerWidth
     justifyContent: "center",
     alignItems: "center",
     overflow: "hidden",

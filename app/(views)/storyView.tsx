@@ -5,6 +5,7 @@ import { useUser } from '@clerk/clerk-expo'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { VideoView, useVideoPlayer } from 'expo-video'
+import { Eye, Trash } from 'phosphor-react-native'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Dimensions, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 
@@ -27,6 +28,8 @@ export default function StoryView() {
 	const [progress, setProgress] = useState<number>(0)
 	const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 	const startedAtRef = useRef<number>(0)
+	const pressStartRef = useRef<number>(0)
+	const suppressTapRef = useRef<boolean>(false)
 		const [sendingReaction, setSendingReaction] = useState<boolean>(false)
 		const [viewersVisible, setViewersVisible] = useState(false)
 		const [viewersData, setViewersData] = useState<import('@/lib/database.module').StoryViewersResponse | null>(null)
@@ -73,11 +76,11 @@ export default function StoryView() {
 		}
 	}, [])
 
-	const startTimer = useCallback(() => {
+	const startTimer = useCallback((fromProgress: number = 0) => {
 		clearTimer()
-		setProgress(0)
+		setProgress(fromProgress)
 		if (durationMs <= 0) return
-		startedAtRef.current = Date.now()
+		startedAtRef.current = Date.now() - Math.max(0, Math.min(1, fromProgress)) * durationMs
 		intervalRef.current = setInterval(() => {
 			const elapsed = Date.now() - startedAtRef.current
 			const p = Math.min(1, elapsed / durationMs)
@@ -91,10 +94,11 @@ export default function StoryView() {
 
 	useEffect(() => {
 		if (currentStory) {
-			startTimer()
+			startTimer(0)
 		}
 		return clearTimer
 	}, [currentStory, startTimer, clearTimer])
+
 
 		// Mark story as viewed when displayed
 		useEffect(() => {
@@ -184,6 +188,16 @@ export default function StoryView() {
 			try { player?.pause() } catch {}
 		}
 	}, [videoUri])
+
+		const pause = useCallback(() => {
+			clearTimer()
+			try { player?.pause() } catch {}
+		}, [clearTimer, player])
+
+		const resume = useCallback(() => {
+			startTimer(progress)
+			try { player?.play() } catch {}
+		}, [startTimer, progress, player])
 
 	if (!currentStory) {
 		return <View style={{ flex: 1, backgroundColor: '#000' }} />
@@ -315,8 +329,26 @@ export default function StoryView() {
 
 			{/* Tap areas: per spec, tap LEFT goes to NEXT story */}
 			<View style={styles.touchOverlay} pointerEvents="box-none">
-				<TouchableOpacity style={styles.leftTap} activeOpacity={0.8} onPress={next} />
-				<TouchableOpacity style={styles.rightTap} activeOpacity={0.8} onPress={prev} />
+				<TouchableOpacity
+					style={styles.leftTap}
+					activeOpacity={0.8}
+					onPress={() => {
+						if (suppressTapRef.current) { suppressTapRef.current = false; return }
+						next()
+					}}
+					onPressIn={() => { pressStartRef.current = Date.now(); pause() }}
+					onPressOut={() => { suppressTapRef.current = (Date.now() - pressStartRef.current) >= 250; resume() }}
+				/>
+				<TouchableOpacity
+					style={styles.rightTap}
+					activeOpacity={0.8}
+					onPress={() => {
+						if (suppressTapRef.current) { suppressTapRef.current = false; return }
+						prev()
+					}}
+					onPressIn={() => { pressStartRef.current = Date.now(); pause() }}
+					onPressOut={() => { suppressTapRef.current = (Date.now() - pressStartRef.current) >= 250; resume() }}
+				/>
 			</View>
 
 							{/* Bottom controls: own story => viewers + delete; others => emoji bar */}
@@ -339,7 +371,7 @@ export default function StoryView() {
 											}}
 										>
 											<Text style={{ color: '#fff', fontSize: 16 }}>
-                                                
+                                                <Eye size={24} color="#fff" weight="fill" />
                                             </Text>
 										</TouchableOpacity>
 										<TouchableOpacity
@@ -391,7 +423,9 @@ export default function StoryView() {
 												)
 											}}
 										>
-											<Text style={{ color: '#fff', fontSize: 16 }}>🗑️ حذف</Text>
+											<Text style={{ color: '#fff', fontSize: 16 }}>
+                                                <Trash size={24} color="rgba(255, 0, 0, 1)" weight="fill" />
+                                            </Text>
 										</TouchableOpacity>
 									</View>
 								) : (

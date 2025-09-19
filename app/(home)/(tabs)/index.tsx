@@ -68,6 +68,7 @@ export default function Page() {
               links={item.links}
               community={item.community}
               comment_count={item.comment_count}
+              reposted_post={item.reposted_post}
               likes={item.likes}
               isLiked={item.likes?.some(like => like?.user_id?.username === user?.username)}
               isPlaying={activePostId === item.id!.toString()}
