@@ -1,5 +1,5 @@
 import { StyleSheet } from "react-native";
-export default theme = {
+export const theme = {
     colors: {
         primary: "#1D9BF0",
         primaryDark: "#1778C0",
@@ -96,3 +96,5 @@ export const styles = StyleSheet.create({
     fontFamily: 'light',
   }
 })
+
+export default theme

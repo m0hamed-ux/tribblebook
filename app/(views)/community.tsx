@@ -75,6 +75,17 @@ export default function CommunityScreen() {
     }
   }, [community?.members, user?.username]);
 
+  const isAdmin = useMemo(() => {
+    if (!community?.community_admin || (!user?.id && !user?.username)) return false;
+    const adminUser = (community as any)?.community_admin;
+    const adminId = adminUser?.id;
+    const adminUsername = adminUser?.username;
+    return (
+      (adminId != null && String(adminId) === String(user?.id)) ||
+      (!!adminUsername && adminUsername === user?.username)
+    );
+  }, [community?.community_admin, user?.id, user?.username]);
+
   const handleJoinLeave = async () => {
     if (!communityId) return;
     if (!user?.id) {
@@ -168,6 +179,15 @@ export default function CommunityScreen() {
               </Text>
             </TouchableOpacity>
           </View>
+
+          {isAdmin && (
+            <TouchableOpacity
+              onPress={() => communityId && router.push({ pathname: '/(menu)/editCommunity', params: { id: communityId, name: community?.name, description: community?.description, profile: community?.profile } })}
+              style={[styles.createPostBtn, { backgroundColor: '#333' }]}
+            >
+              <Text style={styles.createPostText}>تعديل المجتمع</Text>
+            </TouchableOpacity>
+          )}
 
           {!!community?.description && (
             <Text style={styles.description}>{community.description}</Text>

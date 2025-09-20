@@ -1,17 +1,21 @@
 import Header from '@/app/components/header'
 import Post from '@/app/components/post'
+import { SkeletonPost, SkeletonStoryRow } from '@/app/components/Skeleton'
 import Story, { MyStory } from '@/app/components/story'
 import { styles } from '@/assets/theme/styles'
 import { PostProps, StoryViewProps, UserProps } from '@/lib/database.module'
-import { getPosts, getStories } from '@/lib/db'
+import { getPosts, getStories, getUser } from '@/lib/db'
 import { SignedIn, SignedOut, useUser } from '@clerk/clerk-expo'
+import { useNavigation } from '@react-navigation/native'
 import { Redirect, useRouter } from 'expo-router'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { FlatList, Text, TouchableOpacity, View } from 'react-native'
+
 
 export default function Page() {
   const { user } = useUser()
   const router = useRouter()
+  const navigation = useNavigation<any>()
   const data = [
     { id: "2", image : "https://images.unsplash.com/photo-1526779259212-939e64788e3c?fm=jpg&q=60&w=3000&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8NXx8ZnJlZSUyMGltYWdlc3xlbnwwfHwwfHx8MA%3D%3D" },
     { id: "3", image : "https://images.unsplash.com/photo-1526779259212-939e64788e3c?fm=jpg&q=60&w=3000&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8NXx8ZnJlZSUyMGltYWdlc3xlbnwwfHwwfHx8MA%3D%3D" },
@@ -23,24 +27,46 @@ export default function Page() {
   ]
   const [refreshing, setRefreshing] = useState(false); 
   const [posts, setPosts] = useState<PostProps[]>([]);
+  const listRef = useRef<FlatList<PostProps>>(null)
   const [stories, setStories] = useState<Array<{ author: UserProps; stories: StoryViewProps[] }>>([])
+  const [profile, setProfile] = useState<UserProps | null>(null)
+  const [loading, setLoading] = useState(true)
 
   
   const loadData = useCallback(async () => {
-    const data = await getPosts();
-    setPosts(data);
-    if (user?.id) {
-      const s = await getStories(user.id)
-      setStories(s)
-    } else {
-      setStories([])
+    setLoading(true)
+    try {
+      const data = await getPosts();
+      const profile = user?.username ? await getUser(user.username) : null
+      setProfile(profile)
+      setPosts(data);
+      if (user?.id) {
+        const s = await getStories(user.id)
+        setStories(s)
+      } else {
+        setStories([])
+      }
+    } finally {
+      setLoading(false)
     }
-  }, [user?.id]);
+  }, [user?.id, user?.username]);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadData();
     setRefreshing(false);
   }, [loadData]);
+
+  // Refresh when the tab is pressed
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('tabPress', () => {
+      // Scroll to top then refresh
+      try {
+        listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      } catch {}
+      onRefresh();
+    });
+    return unsubscribe;
+  }, [navigation, onRefresh]);
   useEffect(() => {
     loadData();
     console.log(user?.username);
@@ -52,6 +78,7 @@ export default function Page() {
      style={[styles.container, {padding: 0, flex: 0}]}>
       <SignedIn>
         <FlatList
+          ref={listRef}
           data={posts} 
           keyExtractor={(item) => item.id!.toString()}
           showsVerticalScrollIndicator={false}
@@ -80,6 +107,9 @@ export default function Page() {
           ListHeaderComponent={
             <>
               <Header />
+              {loading ? (
+                <SkeletonStoryRow />
+              ) : (
               <FlatList
                 data={(() => {
                   const meAuthor: UserProps = {
@@ -115,7 +145,7 @@ export default function Page() {
                   return (
                     <View style={{ alignItems: 'center' }}>
                       {isMe ? (
-                        <MyStory image={user?.imageUrl} hasStories={item.stories.length > 0} groupIndex={index} />
+                        <MyStory image={profile?.profile} hasStories={item.stories.length > 0} groupIndex={index} />
                       ) : (
                         <TouchableOpacity onPress={() => router.push({ pathname: '/storyView', params: { index: String(index) } })}>
                           <Story image={item.author.profile} viewed={item.stories.every(s => s.isViewed)} />
@@ -129,11 +159,19 @@ export default function Page() {
                 }}
                 contentContainerStyle={{ paddingVertical: 10 }}
               />
+              )}
               <Text style={[styles.title, {fontSize: 18, color: "black", paddingHorizontal: 10, marginBottom: 5}]}>
                 أحدث المنشورات
               </Text>
             </>
           }
+          ListEmptyComponent={loading ? (
+            <View>
+              {Array.from({ length: 3 }).map((_, i) => (
+                <SkeletonPost key={i} />
+              ))}
+            </View>
+          ) : undefined}
         />
       </SignedIn>
       <SignedOut>

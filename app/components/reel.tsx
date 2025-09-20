@@ -7,7 +7,7 @@ import { useRouter } from 'expo-router';
 import { useVideoPlayer, VideoPlayer, VideoView } from 'expo-video';
 import { ChatCircle, Heart, Repeat, SealCheck, ShareFat } from 'phosphor-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Dimensions, Image, Modal, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, TouchableOpacity, View } from 'react-native';
+import { Dimensions, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, TouchableOpacity, View } from 'react-native';
 import ExpandableText from './ExpandableText';
 import Comment from './comment';
 
@@ -94,28 +94,29 @@ export default function Reel({
     }, [videoUrl]); // Only cleanup when video URL changes
 
     const togglePlay = useCallback(() => {
-        if (!isPlayerReleased) {
-            const currentPlayer = playerRef.current || player;
-            if (currentPlayer) {
-                try {
-                    if (playing) {
-                        currentPlayer.pause();
-                        setPlaying(false);
-                    } else {
-                        currentPlayer.play();
-                        setPlaying(true);
-                    }
-                } catch (error) {
-                    console.warn('Error toggling video playback:', error);
-                    setIsPlayerReleased(true);
+        if (isPlayerReleased) return;
+
+        const currentPlayer = playerRef.current || player;
+        if (!currentPlayer) return;
+
+        try {
+            setPlaying((prev) => {
+                const next = !prev;
+                if (next) {
+                    // Going to play
+                    currentPlayer.play();
+                    if (onPlay) onPlay();
+                } else {
+                    // Going to pause
+                    currentPlayer.pause();
                 }
-            }
+                return next;
+            });
+        } catch (error) {
+            console.warn('Error toggling video playback:', error);
+            // Do not permanently release on transient errors
         }
-        
-        if (onPlay) {
-            onPlay();
-        }
-    }, [playing, onPlay, player, isPlayerReleased]);
+    }, [onPlay, player, isPlayerReleased]);
 
     const handleLike = useCallback(async () => {
         if (!user || !id) {
@@ -179,14 +180,26 @@ export default function Reel({
     return (
         <View style={styles.container}>
             {/* Video Player */}
-            <TouchableOpacity onPress={togglePlay} style={styles.videoContainer} activeOpacity={1}>
+            <View style={styles.videoContainer}>
                 <VideoView
                     player={player}
                     style={styles.video}
                     contentFit="contain"
                     nativeControls={false}
                 />
-            </TouchableOpacity>
+
+                {/* Play overlay icon when paused */}
+                {!playing && (
+                    <View style={styles.playOverlay} pointerEvents="none">
+                        <View style={styles.playOverlayCircle}>
+                            <Entypo name="controller-play" size={64} color="white" />
+                        </View>
+                    </View>
+                )}
+
+                {/* Full-screen press target for reliable toggle */}
+                <Pressable onPress={togglePlay} style={StyleSheet.absoluteFill} android_ripple={{ color: 'transparent' }} />
+            </View>
 
             <LinearGradient
                 colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.7)']}
@@ -350,10 +363,21 @@ const styles = StyleSheet.create({
     },
     videoContainer: {
         flex: 1,
+        position: 'relative',
     },
     video: {
         width: '100%',
         height: '100%',
+    },
+    playOverlay: {
+        ...StyleSheet.absoluteFillObject as any,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    playOverlayCircle: {
+        backgroundColor: 'rgba(0,0,0,0.35)',
+        borderRadius: 48,
+        padding: 12,
     },
     bottomGradient: {
         position: 'absolute',

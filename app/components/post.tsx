@@ -5,7 +5,7 @@ import { useUser } from '@clerk/clerk-expo';
 import Entypo from '@expo/vector-icons/Entypo';
 import { useRouter } from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import { BookmarkSimple, ChatCircle, Heart, Repeat, SealCheck, ShareFat } from 'phosphor-react-native';
+import { ChatCircle, Heart, Repeat, SealCheck, ShareFat } from 'phosphor-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { Image, Linking, Modal, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, TouchableOpacity, View } from 'react-native';
 import Carousel from './carousel';
@@ -339,10 +339,21 @@ export default function Post({id, author, title, content, images, video, communi
 
             {/* Reposted Post - full inline rendering */}
             {reposted_post ? (
-                <View style={style.repostCard}>
+                <TouchableOpacity
+                    activeOpacity={0.85}
+                    style={style.repostCard}
+                    onPress={() => {
+                        try {
+                            const rid = (reposted_post as any)?.id
+                            if (rid != null) {
+                                router.push(`/(views)/postPreview?id=${rid}`)
+                            }
+                        } catch {}
+                    }}
+                >
                     {/* Header */}
                     <View style={{flexDirection: 'row-reverse', alignItems: 'center', gap: 10, marginBottom: 10}}>
-                        <TouchableOpacity onPress={() => {
+                        <TouchableOpacity onPress={(e: any) => { e?.stopPropagation?.();
                             if (reposted_post.community?.id != null) {
                                 router.push(`/(views)/community?id=${reposted_post.community.id}`);
                             } else if (reposted_post.author?.username) {
@@ -360,7 +371,7 @@ export default function Post({id, author, title, content, images, video, communi
                                 <Image source={{uri: reposted_post.author?.profile}} style={{width: 36, height: 36, borderRadius: 18}} />
                             )}
                         </TouchableOpacity>
-                        <TouchableOpacity style={{flex: 1}} onPress={() => {
+                        <TouchableOpacity style={{flex: 1}} onPress={(e: any) => { e?.stopPropagation?.();
                             if (reposted_post.community?.id != null) {
                                 router.push(`/(views)/community?id=${reposted_post.community.id}`);
                             } else if (reposted_post.author?.username) {
@@ -445,7 +456,7 @@ export default function Post({id, author, title, content, images, video, communi
                     {reposted_post.links ? (
                         <View style={{marginTop: 8}}>
                             <TouchableOpacity
-                                onPress={() => {
+                                onPress={(e: any) => { e?.stopPropagation?.();
                                     const lnk = reposted_post.links as string;
                                     if (lnk.startsWith('http://') || lnk.startsWith('https://')) {
                                         Linking.openURL(lnk).catch(err => console.error('Failed to open URL:', err));
@@ -461,7 +472,7 @@ export default function Post({id, author, title, content, images, video, communi
                             </TouchableOpacity>
                         </View>
                     ) : null}
-                </View>
+                </TouchableOpacity>
             ) : null}
 
             {video && videoSource && (
@@ -523,7 +534,6 @@ export default function Post({id, author, title, content, images, video, communi
                     <Repeat size={24} color="#7b7b7bff" />
                     <Text style={{color: "#7b7b7bff"}}></Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={style.reactionIcon}><BookmarkSimple size={24} color="#7b7b7bff" /></TouchableOpacity>
             </View>
 
             <Modal
@@ -542,10 +552,6 @@ export default function Post({id, author, title, content, images, video, communi
                     <TouchableOpacity style={style.sheetItem} onPress={() => { setOptionsVisible(false); setTimeout(() => setRepostVisible(true), 80); }}>
                         <Repeat size={20} color="#333" />
                         <Text style={style.sheetItemText}>إعادة نشر</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={style.sheetItem} onPress={() => { setOptionsVisible(false); ToastAndroid.show('تم الحفظ', ToastAndroid.SHORT) }}>
-                        <BookmarkSimple size={20} color="#333" />
-                        <Text style={style.sheetItemText}>حفظ</Text>
                     </TouchableOpacity>
                     {canDelete && (
                         <TouchableOpacity

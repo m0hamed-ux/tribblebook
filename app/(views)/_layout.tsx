@@ -9,6 +9,7 @@ export default function Layout() {
         <Stack.Screen name="addStory" options={{ headerShown: false }} />
         <Stack.Screen name="community" options={{ headerShown: false }} />
         <Stack.Screen name="storyView" options={{ headerShown: false }} />
+        <Stack.Screen name="postPreview" options={{ headerShown: false }} />
       </Stack>
     </SafeAreaView>
   )

@@ -2,7 +2,7 @@ import Reel, { ReelProps } from '@/app/components/reel';
 import { PostProps } from '@/lib/database.module';
 import { getReels } from '@/lib/db';
 import { useUser } from '@clerk/clerk-expo';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, StatusBar, View, ViewToken } from 'react-native';
 
@@ -23,27 +23,39 @@ const transformPostsToReels = (posts: PostProps[], currentUserUsername?: string)
 
 export default function WatchScreen() {
     const { user } = useUser();
+    const navigation = useNavigation<any>();
     const [activeIndex, setActiveIndex] = useState(0);
     const [containerHeight, setContainerHeight] = useState(0);
     const [isScreenFocused, setIsScreenFocused] = useState(true);
     const [sampleReels, setSampleReels] = useState<ReelProps[]>([]);
+    const [refreshing, setRefreshing] = useState(false);
     const flatListRef = useRef<FlatList>(null);
 
-    // Load reels data on component mount
-    useEffect(() => {
-        const loadReels = async () => {
-            try {
-                const reelsData = await getReels();
-                const transformedReels = transformPostsToReels(reelsData, user?.username || undefined);
-                setSampleReels(transformedReels);
-            } catch (error) {
-                console.error('Failed to load reels:', error);
-                setSampleReels([]);
-            }
-        };
-        
-        loadReels();
+    // Load reels data on demand and on mount
+    const loadReels = useCallback(async () => {
+        try {
+            const reelsData = await getReels();
+            const transformedReels = transformPostsToReels(reelsData, user?.username || undefined);
+            setSampleReels(transformedReels);
+        } catch (error) {
+            console.error('Failed to load reels:', error);
+            setSampleReels([]);
+        }
     }, [user?.username]);
+
+    useEffect(() => {
+        loadReels();
+    }, [loadReels]);
+
+    // Pull to refresh handler
+    const onRefresh = useCallback(async () => {
+        try {
+            setRefreshing(true);
+            await loadReels();
+        } finally {
+            setRefreshing(false);
+        }
+    }, [loadReels]);
 
     // Handle screen focus/blur events
     useFocusEffect(
@@ -67,6 +79,14 @@ export default function WatchScreen() {
             StatusBar.setBarStyle('dark-content');
         };
     }, []);
+
+    // Refresh when the tab is pressed
+    useEffect(() => {
+        const unsubscribe = navigation.addListener('tabPress', () => {
+            onRefresh();
+        });
+        return unsubscribe;
+    }, [navigation, onRefresh]);
 
     useEffect(() => {
         if (flatListRef.current && activeIndex < sampleReels.length) {
@@ -123,6 +143,8 @@ export default function WatchScreen() {
                     data={sampleReels}
                     renderItem={renderItem}
                     keyExtractor={keyExtractor}
+                    onRefresh={onRefresh}
+                    refreshing={refreshing}
                     pagingEnabled
                     showsVerticalScrollIndicator={false}
                     snapToInterval={containerHeight}

@@ -132,6 +132,77 @@ export async function getUser(username: string){
     }
 }
 
+// Follow/Unfollow and Followers/Following APIs
+export async function followUser(targetUserId: string | number, userId: string) {
+    if (!userId) return { success: false } as const
+    try {
+        const res = await fetch(`https://tribblebook-backend.onrender.com/users/${encodeURIComponent(String(targetUserId))}/follow`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${userId}`
+            }
+        })
+        if (res.ok) return { success: true } as const
+        const body = await safeReadText(res)
+        console.log('follow user failed:', res.status, res.statusText, body)
+        return { success: false } as const
+    } catch (e) {
+        console.log('follow user error:', e)
+        return { success: false } as const
+    }
+}
+
+export async function unfollowUser(targetUserId: string | number, userId: string) {
+    if (!userId) return { success: false } as const
+    try {
+        const res = await fetch(`https://tribblebook-backend.onrender.com/users/${encodeURIComponent(String(targetUserId))}/follow`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${userId}`
+            }
+        })
+        if (res.ok) return { success: true } as const
+        const body = await safeReadText(res)
+        console.log('unfollow user failed:', res.status, res.statusText, body)
+        return { success: false } as const
+    } catch (e) {
+        console.log('unfollow user error:', e)
+        return { success: false } as const
+    }
+}
+
+export async function getFollowers(targetUserId: string | number) {
+    try {
+        const res = await fetch(`https://tribblebook-backend.onrender.com/users/${encodeURIComponent(String(targetUserId))}/followers`)
+        if (res.ok) {
+            return await res.json() as UserProps[]
+        } else {
+            const body = await safeReadText(res)
+            console.log('get followers failed:', res.status, res.statusText, body)
+            return [] as UserProps[]
+        }
+    } catch (e) {
+        console.log('get followers error:', e)
+        return [] as UserProps[]
+    }
+}
+
+export async function getFollowing(targetUserId: string | number) {
+    try {
+        const res = await fetch(`https://tribblebook-backend.onrender.com/users/${encodeURIComponent(String(targetUserId))}/following`)
+        if (res.ok) {
+            return await res.json() as UserProps[]
+        } else {
+            const body = await safeReadText(res)
+            console.log('get following failed:', res.status, res.statusText, body)
+            return [] as UserProps[]
+        }
+    } catch (e) {
+        console.log('get following error:', e)
+        return [] as UserProps[]
+    }
+}
+
 export async function createPost(title: string, content: string, userId: string, images?: string[], video?: string, links?: string, community?: string | number, reposted_post: string | number | null = null){
     try{
         const response = await fetch("https://tribblebook-backend.onrender.com/create/post", {
@@ -261,6 +332,144 @@ export async function getTrendingPosts(){
     } catch (error) {
         console.log(error)
         return []
+    }
+}
+
+// Communities management for current user
+export async function getMyCommunities(userId: string) {
+    try {
+        const res = await fetch('https://tribblebook-backend.onrender.com/user/communities', {
+            headers: { 'Authorization': `Bearer ${userId}` },
+        })
+        if (res.ok) {
+            return await res.json() as {
+                admin_communities: Array<any>
+                member_communities: Array<any>
+            }
+        } else {
+            const body = await safeReadText(res)
+            console.log('get my communities failed:', res.status, res.statusText, body)
+            return { admin_communities: [], member_communities: [] }
+        }
+    } catch (e) {
+        console.log('get my communities error:', e)
+        return { admin_communities: [], member_communities: [] }
+    }
+}
+
+export async function createCommunity(
+    name: string,
+    userId: string,
+    opts?: { description?: string; profile?: string }
+) {
+    try {
+        const res = await fetch('https://tribblebook-backend.onrender.com/communities', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${userId}`,
+            },
+            body: JSON.stringify({ name, description: opts?.description, profile: opts?.profile }),
+        })
+        if (res.ok) {
+            return await res.json()
+        } else {
+            const body = await safeReadText(res)
+            console.log('create community failed:', res.status, res.statusText, body)
+            return null
+        }
+    } catch (e) {
+        console.log('create community error:', e)
+        return null
+    }
+}
+
+export async function updateCommunity(
+    id: string | number,
+    data: { name?: string; description?: string; profile?: string },
+    userId: string
+) {
+    const url = `https://tribblebook-backend.onrender.com/communities/${encodeURIComponent(String(id))}`
+
+    // Small helpers scoped to this function
+    const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
+    const shouldRetry = (status?: number) => Boolean(status && [500, 502, 503, 504].includes(status))
+
+    const attempt = async (method: 'PUT' | 'PATCH') => {
+        const res = await fetch(url, {
+            method,
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${userId}`,
+            },
+            body: JSON.stringify(data),
+        })
+        return res
+    }
+
+    try {
+        // Try up to 3 times for transient 5xx errors
+        let method: 'PUT' | 'PATCH' = 'PUT'
+        let lastRes: Response | null = null
+        for (let i = 0; i < 3; i++) {
+            const res = await attempt(method)
+            lastRes = res
+            if (res.ok) {
+                // handle 204 no content gracefully
+                try {
+                    const json = await res.json()
+                    return json ?? {}
+                } catch {
+                    return {}
+                }
+            }
+
+            // If method not allowed, try PATCH once immediately
+            if (res.status === 405) {
+                if (method === 'PUT') {
+                    method = 'PATCH'
+                    continue
+                }
+            }
+
+            if (shouldRetry(res.status) && i < 2) {
+                await delay(500 * Math.pow(2, i)) // 500ms, 1000ms
+                continue
+            }
+            break
+        }
+
+        if (lastRes) {
+            const body = await safeReadText(lastRes)
+            console.log('update community failed:', lastRes.status, lastRes.statusText, body)
+        }
+        return null
+    } catch (e) {
+        console.log('update community error:', e)
+        return null
+    }
+}
+
+export async function deleteCommunity(id: string | number, userId: string) {
+    try {
+        const res = await fetch(`https://tribblebook-backend.onrender.com/communities/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${userId}`,
+            },
+        })
+        if (res.ok) {
+            const body = await res.json().catch(() => ({}))
+            return body?.success !== false
+        } else {
+            const body = await safeReadText(res)
+            console.log('delete community failed:', res.status, res.statusText, body)
+            return false
+        }
+    } catch (e) {
+        console.log('delete community error:', e)
+        return false
     }
 }
 
@@ -419,6 +628,91 @@ export async function getStoryViewers(storyId: string, userId: string) {
         }
     } catch (error) {
         console.log("get story viewers error:", error)
+        return null
+    }
+}
+
+
+// get post by id :
+export async function getPostById(postId: string | number) {
+    try {
+        const response = await fetch(`https://tribblebook-backend.onrender.com/posts/${postId}`)
+        if (response.ok) {
+            const data = await response.json()
+            // Some endpoints may return an array; normalize to single PostProps
+            const post = Array.isArray(data) ? (data[0] ?? null) : data
+            return post as PostProps | null
+        } else {
+            const body = await safeReadText(response)
+            console.log("get post failed:", response.status, response.statusText, body)
+            return null
+        }
+    } catch (error) {
+        console.log("get post error:", error)
+        return null
+    }
+}
+
+
+
+// recomendations 
+export async function getRecommendations(userId: string) {
+    try {
+        const response = await fetch("https://tribblebook-backend.onrender.com/recommendations", {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${userId}`
+            }
+        })
+        if (response.ok) {
+            const data = await response.json()
+            return data as {
+                posts: PostProps[];
+                communities: Array<{
+                    id: string;
+                    name: string;
+                    profile: string;
+                    description: string;
+                    member_count: number;
+                    recent_members: Array<{ user_id: UserProps }>;
+                }>;
+                users: UserProps[];
+            }
+        } else {
+            const body = await safeReadText(response)
+            console.log("get recommendations failed:", response.status, response.statusText, body)
+            return { posts: [], communities: [], users: [] }
+        }
+    } catch (error) {
+        console.log("get recommendations error:", error)
+        return { posts: [], communities: [], users: [] }
+    }
+}
+
+export async function updateMyProfile(
+    payload: Partial<Pick<UserProps, 'fullname' | 'bio' | 'profile' | 'private'>>,
+    userId: string,
+) {
+    try {
+        const res = await fetch(`https://tribblebook-backend.onrender.com/profile/update`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${userId}`,
+            },
+            body: JSON.stringify(payload),
+        })
+        if (res.ok) {
+            // Endpoint returns updated user
+            const data = await res.json()
+            return data as UserProps
+        } else {
+            const body = await safeReadText(res)
+            console.log('update profile failed:', res.status, res.statusText, body)
+            return null
+        }
+    } catch (e) {
+        console.log('update profile error:', e)
         return null
     }
 }

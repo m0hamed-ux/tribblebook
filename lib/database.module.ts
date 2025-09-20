@@ -3,6 +3,7 @@ export interface StoryProps {
 }
 
 export interface UserProps {
+    id?: string | number,
     username: string,
     fullname: string,
     profile: string | any,

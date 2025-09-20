@@ -1,0 +1,227 @@
+import theme, { styles as appStyles } from '@/assets/theme/styles'
+import { deleteCommunity, updateCommunity } from '@/lib/db'
+import { useUser } from '@clerk/clerk-expo'
+import * as ImagePicker from 'expo-image-picker'
+import { useLocalSearchParams, useRouter } from 'expo-router'
+import { ArrowRight, ImageSquare } from 'phosphor-react-native'
+import React, { useMemo, useState } from 'react'
+import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+
+const CLOUDINARY_URL = 'https://api.cloudinary.com/v1_1/dtspfuyuf/'
+const CLOUDINARY_UPLOAD_PRESET = process.env.CLOUDINARY_UPLOAD_PRESET || 'tribble_preset'
+
+async function uploadToCloudinary(uri: string): Promise<string | null> {
+  try {
+    const form = new FormData()
+    form.append('file', { uri, type: 'image/jpeg', name: `community_${Date.now()}.jpg` } as any)
+    form.append('upload_preset', CLOUDINARY_UPLOAD_PRESET)
+    const res = await fetch(`${CLOUDINARY_URL}image/upload`, { method: 'POST', body: form })
+    const data = await res.json()
+    if (res.ok && data.secure_url) return data.secure_url as string
+    return null
+  } catch (e) {
+    console.log('cloudinary error', e)
+    return null
+  }
+}
+
+export default function EditCommunityScreen() {
+  const router = useRouter()
+  const { user } = useUser()
+  const params = useLocalSearchParams<{ id: string; name?: string; description?: string; profile?: string }>()
+  const [name, setName] = useState(params.name || '')
+  const [description, setDescription] = useState(params.description || '')
+  const [profile, setProfile] = useState<string | null>((params.profile as string) || null)
+  const [loading, setLoading] = useState(false)
+
+  const canSave = useMemo(() => name.trim().length > 0, [name])
+
+  const onPickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (status !== 'granted') {
+      return Alert.alert('إذن مرفوض', 'نحتاج إلى إذن للوصول إلى الصور')
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 })
+    if (!result.canceled && result.assets[0]) {
+      setLoading(true)
+      const url = await uploadToCloudinary(result.assets[0].uri)
+      setLoading(false)
+      if (url) setProfile(url)
+      else Alert.alert('خطأ', 'تعذر رفع الصورة')
+    }
+  }
+
+  const onSave = async () => {
+    if (!user?.id) return Alert.alert('خطأ', 'يرجى تسجيل الدخول أولاً')
+    if (!params.id) return Alert.alert('خطأ', 'معرّف المجتمع غير موجود')
+    try {
+      setLoading(true)
+      const resp = await updateCommunity(params.id, {
+        name: name.trim() || undefined,
+        description: description.trim() || undefined,
+        profile: profile || undefined,
+      }, user.id)
+      setLoading(false)
+      if (resp) {
+        Alert.alert('تم', 'تم تحديث بيانات المجتمع')
+        router.back()
+      } else {
+        Alert.alert('خطأ', 'تعذر تحديث المجتمع')
+      }
+    } catch (e) {
+      setLoading(false)
+      Alert.alert('خطأ', 'حدث خطأ غير متوقع')
+    }
+  }
+
+  const onDelete = async () => {
+    if (!user?.id) return Alert.alert('خطأ', 'يرجى تسجيل الدخول أولاً')
+    if (!params.id) return Alert.alert('خطأ', 'معرّف المجتمع غير موجود')
+    Alert.alert('حذف المجتمع', 'هل أنت متأكد من حذف المجتمع؟ لا يمكن التراجع.', [
+      { text: 'إلغاء', style: 'cancel' },
+      {
+        text: 'حذف', style: 'destructive', onPress: async () => {
+          try {
+            setLoading(true)
+            const ok = await deleteCommunity(params.id, user.id)
+            setLoading(false)
+            if (ok) {
+              Alert.alert('تم', 'تم حذف المجتمع')
+              router.back()
+            } else {
+              Alert.alert('خطأ', 'تعذر حذف المجتمع')
+            }
+          } catch (e) {
+            setLoading(false)
+            Alert.alert('خطأ', 'حدث خطأ غير متوقع')
+          }
+        }
+      }
+    ])
+  }
+
+  return (
+    <View style={[appStyles.container, { paddingTop: 8 }]}>      
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} style={s.headerBtn}>
+          <ArrowRight size={22} color={theme.colors.text.primary} />
+        </TouchableOpacity>
+        <View style={{ alignItems: 'center', flex: 1 }}>
+          <Text style={s.headerTitle}>تعديل المجتمع</Text>
+          <Text style={s.headerSubtitle}>قم بتحديث معلومات المجتمع</Text>
+        </View>
+        <View style={s.headerBtn} />
+      </View>
+
+      <ScrollView contentContainerStyle={{ paddingVertical: 8 }}>
+        <View style={s.avatarRow}>
+          <TouchableOpacity onPress={onPickImage} activeOpacity={0.8} style={s.avatarBtn}>
+            {profile ? (
+              <Image source={{ uri: profile }} style={s.avatar} />
+            ) : (
+              <View style={[s.avatar, { alignItems: 'center', justifyContent: 'center', backgroundColor: '#eaeaea' }]}> 
+                <ImageSquare size={28} color="#666" />
+              </View>
+            )}
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={s.label}>صورة المجتمع</Text>
+            <Text style={s.help}>اختياري، يفضل 1:1</Text>
+          </View>
+        </View>
+
+        <View style={s.fieldBlock}>
+          <Text style={s.label}>اسم المجتمع</Text>
+          <TextInput
+            style={[appStyles.input, { borderRadius: 12, borderTopLeftRadius: 12, borderBottomLeftRadius: 12 }]}
+            placeholder="اسم المجتمع"
+            placeholderTextColor="#9e9e9e"
+            value={name}
+            onChangeText={setName}
+          />
+        </View>
+        <View style={s.fieldBlock}>
+          <Text style={s.label}>وصف</Text>
+          <TextInput
+            style={[appStyles.input, { height: 120, borderRadius: 12, borderTopLeftRadius: 12, borderBottomLeftRadius: 12, textAlignVertical: 'top' }]}
+            placeholder="وصف المجتمع"
+            placeholderTextColor="#9e9e9e"
+            value={description}
+            onChangeText={setDescription}
+            multiline
+            maxLength={300}
+          />
+          <Text style={s.help}>{description.length}/300</Text>
+        </View>
+
+        <TouchableOpacity disabled={!canSave || loading} activeOpacity={0.8} style={[appStyles.buttonPrimary, { opacity: !canSave || loading ? 0.6 : 1 }]} onPress={onSave}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontFamily: 'bold' }}>حفظ التغييرات</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity disabled={loading} activeOpacity={0.8} style={[appStyles.buttonPrimary, { backgroundColor: '#e53935', marginTop: 10, opacity: loading ? 0.6 : 1 }]} onPress={onDelete}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontFamily: 'bold' }}>حذف المجتمع</Text>}
+        </TouchableOpacity>
+      </ScrollView>
+    </View>
+  )
+}
+
+const s = StyleSheet.create({
+  header: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    marginBottom: 8,
+  },
+  headerTitle: {
+    fontSize: 22,
+    color: theme.colors.text.primary,
+    fontFamily: 'bold',
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: theme.colors.text.secondary,
+    marginTop: 2,
+    fontFamily: 'regular',
+  },
+  headerBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ff000000',
+  },
+  avatarRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  avatarBtn: {
+    borderRadius: 40,
+    overflow: 'hidden',
+  },
+  avatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+  },
+  fieldBlock: {
+    // marginBottom: 10,
+  },
+  label: {
+    color: theme.colors.text.secondary,
+    fontFamily: 'regular',
+    marginBottom: 6,
+    textAlign: 'right',
+    fontSize: 12,
+  },
+  help: {
+    color: theme.colors.text.muted,
+    fontFamily: 'regular',
+    fontSize: 12,
+    textAlign: 'right',
+    marginTop: 6,
+  },
+})
