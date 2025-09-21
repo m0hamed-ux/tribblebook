@@ -1,6 +1,8 @@
+import { getOrCreateConversation, sendPostMessage } from '@/lib/chat';
 import { CommentProps, CommunityProps, UserProps } from '@/lib/database.module';
 import { timeAgo } from '@/lib/date';
-import { createComment, createPost, deletePost, getPostComments, getUser, handleCommentLike, handleCommentUnlike, handleLike } from '@/lib/db';
+import { createComment, createPost, createReport, deletePost, getFollowing, getPostComments, getUser, handleCommentLike, handleCommentUnlike, handleLike, sendNotification } from '@/lib/db';
+import { sendMessageNotification } from '@/lib/notification';
 import { useUser } from '@clerk/clerk-expo';
 import Entypo from '@expo/vector-icons/Entypo';
 import { useRouter } from 'expo-router';
@@ -36,6 +38,7 @@ export default function Post({id, author, title, content, images, video, communi
     const router = useRouter();
     const [commentVisible, setCommentVisible] = useState(false);
     const [optionsVisible, setOptionsVisible] = useState(false);
+    const [shareVisible, setShareVisible] = useState(false);
     const [repostVisible, setRepostVisible] = useState(false);
     const [repostTitle, setRepostTitle] = useState('');
     const [repostContent, setRepostContent] = useState('');
@@ -46,10 +49,18 @@ export default function Post({id, author, title, content, images, video, communi
     const [Comments, setComments] = useState<Array<CommentProps> | null>(null);
     const [loadingComments, setLoadingComments] = useState(false);
     const [profile, setProfile] = useState<any>(null);
+    const [currentProfile, setCurrentProfile] = useState<UserProps | null>(null);
+    const [followingList, setFollowingList] = useState<UserProps[]>([]);
+    const [loadingFollowing, setLoadingFollowing] = useState(false);
+    const [shareQuery, setShareQuery] = useState('');
+    const [sendingTo, setSendingTo] = useState<string | null>(null);
     const [commentText, setCommentText] = useState('');
     const [postingComment, setPostingComment] = useState(false);
     const [removed, setRemoved] = useState(false);
     const [replyTo, setReplyTo] = useState<{ parentId: number | null, username: string | null }>({ parentId: null, username: null });
+    const [reportVisible, setReportVisible] = useState(false);
+    const [reportReason, setReportReason] = useState('');
+    const [reporting, setReporting] = useState(false);
     const commentInputRef = useRef<TextInput>(null);
     const currentUsername = user?.username;
     const isOwner = author?.username && user?.username && author.username === user.username;
@@ -78,6 +89,34 @@ export default function Post({id, author, title, content, images, video, communi
         };
         fetchProfile();
     }, [author?.username]);
+    // Load current user's backend profile (id) to enable sharing
+    useEffect(() => {
+        (async () => {
+            try {
+                const uname = (user as any)?.username
+                if (!uname) return
+                const me = await getUser(uname)
+                setCurrentProfile(me ?? null)
+            } catch {}
+        })()
+    }, [user])
+    // Load following list when share modal opens
+    useEffect(() => {
+        (async () => {
+            if (!shareVisible) return
+            try {
+                const meId = currentProfile?.id ? String(currentProfile.id) : null
+                if (!meId) return
+                setLoadingFollowing(true)
+                const list = await getFollowing(meId)
+                setFollowingList(Array.isArray(list) ? list : [])
+            } catch {
+                setFollowingList([])
+            } finally {
+                setLoadingFollowing(false)
+            }
+        })()
+    }, [shareVisible, currentProfile?.id])
     // Update local state when isLiked prop changes
     useEffect(() => {
         setLiked(isLiked ?? false);
@@ -152,15 +191,15 @@ export default function Post({id, author, title, content, images, video, communi
         }
 
         const newLikedState = !liked;
-        
+
         // Optimistically update UI
         setLiked(newLikedState);
         setLikesCount(prev => newLikedState ? prev + 1 : (prev > 0 ? prev - 1 : 0));
-        
+
         try {
             // Call API
             const result = await handleLike(Number(id), user.id);
-            
+
             if (result === null) {
                 // Revert optimistic update if API call failed
                 setLiked(!newLikedState);
@@ -168,6 +207,20 @@ export default function Post({id, author, title, content, images, video, communi
                 ToastAndroid.show("Failed to update like", ToastAndroid.SHORT);
             } else {
                 ToastAndroid.show(newLikedState ? "Liked" : "Unliked", ToastAndroid.SHORT);
+                // Send notification to post author on like only (not unlike)
+                if (newLikedState && author?.id && user?.id && String(author.id) !== String(user.id)) {
+                    const actorName = (user.fullName || user.username) as string;
+                    try {
+                        await sendNotification(user.id, {
+                            recipientId: author.id,
+                            type: 'like',
+                            targetType: 'post',
+                            targetId: id!,
+                            title: 'إعجاب بمنشورك',
+                            body: ` أعجب بمنشورك`,
+                        });
+                    } catch {}
+                }
             }
         } catch (error) {
             // Revert optimistic update if error occurred
@@ -219,6 +272,39 @@ export default function Post({id, author, title, content, images, video, communi
             // Re-fetch to ensure proper author details and nesting
             await reloadComments();
             ToastAndroid.show('تم نشر التعليق', ToastAndroid.SHORT);
+
+            // Send notifications (avoid notifying self)
+            const actorName = (user.fullName || user.username) as string;
+            // Notify post author about a new comment
+            if (author?.id && String(author.id) !== String(user.id)) {
+                try {
+                    await sendNotification(user.id, {
+                        recipientId: author.id,
+                        type: 'comment',
+                        targetType: 'post',
+                        targetId: id!,
+                        title: 'تعليق جديد',
+                        body: ` علّق على منشورك`,
+                    });
+                } catch {}
+            }
+            // If it's a reply, notify the comment owner (reply target)
+            if (replyTo.parentId && replyTo.username) {
+                try {
+                    const replyTarget = await getUser(replyTo.username);
+                    const targetId = replyTarget?.id;
+                    if (targetId && String(targetId) !== String(user.id) && (!author?.id || String(targetId) !== String(author.id))) {
+                        await sendNotification(user.id, {
+                            recipientId: targetId,
+                            type: 'reply',
+                            targetType: 'post',
+                            targetId: id!,
+                            title: 'رد جديد',
+                            body: ` رد على تعليقك`,
+                        });
+                    }
+                } catch {}
+            }
         } catch (e) {
             ToastAndroid.show('حدث خطأ أثناء نشر التعليق', ToastAndroid.SHORT);
         } finally {
@@ -280,6 +366,20 @@ export default function Post({id, author, title, content, images, video, communi
             } else {
                 const res = await handleCommentLike(commentId, user.id);
                 if (res === null) throw new Error('like failed');
+                // Send notification to comment author for like
+                const actorName = (user.fullName || user.username) as string;
+                if (current?.author?.id && String(current.author.id) !== String(user.id)) {
+                    try {
+                        await sendNotification(user.id, {
+                            recipientId: current.author.id,
+                            type: 'like',
+                            targetType: 'comment',
+                            targetId: commentId,
+                            title: 'إعجاب بتعليقك',
+                            body: ` أعجب بتعليقك`,
+                        });
+                    } catch {}
+                }
             }
         } catch (e) {
             if (Comments) {
@@ -529,7 +629,10 @@ export default function Post({id, author, title, content, images, video, communi
                     <ChatCircle size={24} color="#7b7b7bff" />
                     <Text style={{color: "#7b7b7bff"}}>{comment_count || 0}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={style.reactionIcon}><ShareFat size={24} color="#7b7b7bff" /><Text style={{color: "#7b7b7bff"}}></Text></TouchableOpacity>
+                <TouchableOpacity style={style.reactionIcon} onPress={() => setShareVisible(true)}>
+                    <ShareFat size={24} color="#7b7b7bff" />
+                    <Text style={{color: "#7b7b7bff"}}></Text>
+                </TouchableOpacity>
                 <TouchableOpacity style={style.reactionIcon} onPress={() => setRepostVisible(true)}>
                     <Repeat size={24} color="#7b7b7bff" />
                     <Text style={{color: "#7b7b7bff"}}></Text>
@@ -545,7 +648,7 @@ export default function Post({id, author, title, content, images, video, communi
                 <TouchableOpacity style={style.modalBackdrop} activeOpacity={1} onPress={() => setOptionsVisible(false)} />
                 <View style={style.optionsSheet}>
                     <Text style={style.sheetTitle}>الخيارات</Text>
-                    <TouchableOpacity style={style.sheetItem} onPress={() => { setOptionsVisible(false); ToastAndroid.show('تم النسخ/المشاركة', ToastAndroid.SHORT) }}>
+                    <TouchableOpacity style={style.sheetItem} onPress={() => { setOptionsVisible(false); setTimeout(() => setShareVisible(true), 80); }}>
                         <ShareFat size={20} color="#333" />
                         <Text style={style.sheetItemText}>مشاركة</Text>
                     </TouchableOpacity>
@@ -584,7 +687,7 @@ export default function Post({id, author, title, content, images, video, communi
                             <Text style={[style.sheetItemText, { color: '#d00' }]}>{deleting ? 'جار الحذف...' : 'حذف'}</Text>
                         </TouchableOpacity>
                     )}
-                    <TouchableOpacity style={style.sheetItem} onPress={() => { setOptionsVisible(false); ToastAndroid.show('تم الإبلاغ', ToastAndroid.SHORT) }}>
+                    <TouchableOpacity style={style.sheetItem} onPress={() => { setOptionsVisible(false); setTimeout(() => setReportVisible(true), 80); }}>
                         <Entypo name="flag" size={18} color="#333" />
                         <Text style={style.sheetItemText}>إبلاغ</Text>
                     </TouchableOpacity>
@@ -594,6 +697,150 @@ export default function Post({id, author, title, content, images, video, communi
                             <Text style={style.sheetItemText}>عن الحساب</Text>
                         </TouchableOpacity>
                     )}
+                </View>
+            </Modal>
+
+            {/* Share Modal: followed users */}
+            <Modal
+                animationType="slide"
+                transparent
+                visible={shareVisible}
+                onRequestClose={() => setShareVisible(false)}
+            >
+                <TouchableOpacity style={style.modalBackdrop} activeOpacity={1} onPress={() => setShareVisible(false)} />
+                <View style={style.repostSheet}>
+                    <Text style={style.sheetTitle}>مشاركة مع</Text>
+                    <TextInput
+                        value={shareQuery}
+                        onChangeText={setShareQuery}
+                        placeholder="ابحث عن متابَعين"
+                        placeholderTextColor="#888"
+                        style={[style.input, { marginBottom: 8 }]}
+                        textAlign="right"
+                    />
+                    <View style={{ maxHeight: 320 }}>
+                        {loadingFollowing ? (
+                            <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+                                <Text style={{ fontFamily: 'regular', color: '#666' }}>جاري التحميل...</Text>
+                            </View>
+                        ) : (
+                            <ScrollView style={{ maxHeight: 320 }}>
+                                {followingList
+                                    .filter(u => {
+                                        const q = shareQuery.trim().toLowerCase()
+                                        if (!q) return true
+                                        return (u.username || '').toLowerCase().includes(q) || (u.fullname || '').toLowerCase().includes(q)
+                                    })
+                                    .map(u => (
+                                        <View key={String(u.id)} style={{ flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 }}>
+                                            <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 10 }}>
+                                                <Image source={{ uri: (u.profile as any) || undefined }} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#eee' }} />
+                                                <View>
+                                                    <Text style={{ fontFamily: 'bold', color: '#111', textAlign: 'right' }}>{u.username}</Text>
+                                                    <Text style={{ fontFamily: 'regular', color: '#666', textAlign: 'right' }}>{u.fullname}</Text>
+                                                </View>
+                                            </View>
+                                            <TouchableOpacity
+                                                disabled={sendingTo === String(u.id)}
+                                                onPress={async () => {
+                                                    if (!user?.id || !id) { ToastAndroid.show('يرجى تسجيل الدخول أولاً', ToastAndroid.SHORT); return }
+                                                    const meId = currentProfile?.id ? String(currentProfile.id) : null
+                                                    if (!meId) { ToastAndroid.show('بيانات الحساب غير متاحة', ToastAndroid.SHORT); return }
+                                                    try {
+                                                        setSendingTo(String(u.id))
+                                                        const conv = await getOrCreateConversation(meId, String(u.id))
+                                                        if (conv) {
+                                                            await sendPostMessage(conv.id, meId, Number(id))
+                                                            const senderFullname = currentProfile?.fullname || currentProfile?.username || 'User'
+                                                            sendMessageNotification({ userId: String(u.id), senderFullname, message: 'شارك منشورًا' })
+                                                            ToastAndroid.show('تم الإرسال', ToastAndroid.SHORT)
+                                                            setShareVisible(false)
+                                                        } else {
+                                                            ToastAndroid.show('تعذر فتح المحادثة', ToastAndroid.SHORT)
+                                                        }
+                                                    } catch {
+                                                        ToastAndroid.show('فشل الإرسال', ToastAndroid.SHORT)
+                                                    } finally {
+                                                        setSendingTo(null)
+                                                    }
+                                                }}
+                                                style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#1D9BF0', borderRadius: 8, opacity: sendingTo === String(u.id) ? 0.6 : 1 }}
+                                            >
+                                                <Text style={{ color: 'white', fontFamily: 'bold' }}>{sendingTo === String(u.id) ? '...' : 'إرسال'}</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    ))}
+                                {(!followingList || followingList.length === 0) && !loadingFollowing ? (
+                                    <Text style={{ textAlign: 'center', color: '#666', fontFamily: 'regular', paddingVertical: 16 }}>لا يوجد متابعون</Text>
+                                ) : null}
+                            </ScrollView>
+                        )}
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                        <TouchableOpacity onPress={() => setShareVisible(false)} style={[style.actionBtn, { backgroundColor: '#999' }]}>
+                            <Text style={style.actionBtnText}>إغلاق</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Report Modal */}
+            <Modal
+                animationType="slide"
+                transparent
+                visible={reportVisible}
+                onRequestClose={() => setReportVisible(false)}
+            >
+                <TouchableOpacity style={style.modalBackdrop} activeOpacity={1} onPress={() => setReportVisible(false)} />
+                <View style={style.repostSheet}>
+                    <Text style={style.sheetTitle}>إبلاغ عن منشور</Text>
+                    <Text style={style.formLabel}>سبب الإبلاغ (اختياري)</Text>
+                    <TextInput
+                        style={[style.input, { height: 100, textAlignVertical: 'top' }]}
+                        value={reportReason}
+                        onChangeText={setReportReason}
+                        placeholder="صف المشكلة بإيجاز..."
+                        placeholderTextColor="#888"
+                        textAlign="right"
+                        multiline
+                    />
+                    <View style={{ flexDirection: 'row', gap: 10, justifyContent: 'space-between', marginTop: 10 }}>
+                        <TouchableOpacity
+                            style={[style.actionBtn, { backgroundColor: '#eee' }]}
+                            onPress={() => setReportVisible(false)}
+                            disabled={reporting}
+                        >
+                            <Text style={[style.actionBtnText, { color: '#222' }]}>إلغاء</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[style.actionBtn, { backgroundColor: '#d9534f' }, reporting ? { opacity: 0.6 } : null]}
+                            disabled={reporting}
+                            onPress={async () => {
+                                if (!user?.id || !id) {
+                                    ToastAndroid.show('يرجى تسجيل الدخول أولاً', ToastAndroid.SHORT);
+                                    router.push('/(auth)/sign-in');
+                                    return;
+                                }
+                                try {
+                                    setReporting(true);
+                                    const res = await createReport('post', id, user.id, reportReason.trim() || undefined);
+                                    if (res && res.success) {
+                                        ToastAndroid.show('تم إرسال الإبلاغ', ToastAndroid.SHORT);
+                                        setReportVisible(false);
+                                        setReportReason('');
+                                    } else {
+                                        ToastAndroid.show('فشل إرسال الإبلاغ', ToastAndroid.SHORT);
+                                    }
+                                } catch (e) {
+                                    ToastAndroid.show('حدث خطأ أثناء الإبلاغ', ToastAndroid.SHORT);
+                                } finally {
+                                    setReporting(false);
+                                }
+                            }}
+                        >
+                            <Text style={style.actionBtnText}>{reporting ? 'جارٍ الإرسال...' : 'إبلاغ'}</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
             </Modal>
 

@@ -10,8 +10,8 @@ export default function Layout() {
         <Stack.Screen name="password" options={{ headerShown: false }} />
         <Stack.Screen name="privacy" options={{ headerShown: false }} />
         <Stack.Screen name="communities" options={{ headerShown: false }} />
-  <Stack.Screen name="createCommunity" options={{ headerShown: false }} />
-  <Stack.Screen name="editCommunity" options={{ headerShown: false }} />
+        <Stack.Screen name="createCommunity" options={{ headerShown: false }} />
+        <Stack.Screen name="editCommunity" options={{ headerShown: false }} />
         <Stack.Screen name="verification" options={{ headerShown: false }} />
         <Stack.Screen name="about" options={{ headerShown: false }} />
         <Stack.Screen name="terms" options={{ headerShown: false }} />

@@ -265,8 +265,10 @@ export default function AddStoryScreen() {
 		const asset = result.assets?.[0];
 		if (!asset) return;
 
-		let durationRaw = (asset as any).duration as number | undefined;
-		let durationSec = typeof durationRaw === 'number' ? (durationRaw > 1000 ? durationRaw / 1000 : durationRaw) : undefined;
+	let durationRaw = (asset as any).duration as number | undefined;
+	let durationSec = typeof durationRaw === 'number' ? (durationRaw > 1000 ? durationRaw / 1000 : durationRaw) : undefined;
+	// Coerce to integer seconds for backend (avoids e.g., "17.261")
+	const durationInt = typeof durationSec === 'number' ? Math.round(durationSec) : undefined;
 
 		if (type === 'video') {
 			if (typeof durationSec === 'number' && durationSec > 30) {
@@ -275,7 +277,7 @@ export default function AddStoryScreen() {
 			}
 		}
 
-		setPicked({ uri: asset.uri, type, durationSec });
+	setPicked({ uri: asset.uri, type, durationSec: durationInt });
 	}, []);
 
 	const onAddText = useCallback(() => {
@@ -304,7 +306,13 @@ export default function AddStoryScreen() {
 			const story = {
 				createdAt: new Date().toISOString(),
 				canvas: canvasSize,
-				media: { ...picked, uri: uploadedUrl },
+				media: {
+					...picked,
+					uri: uploadedUrl,
+					...(picked.type === 'video'
+						? { durationSec: typeof picked.durationSec === 'number' ? Math.round(Number(picked.durationSec)) : undefined }
+						: {}),
+				},
 				mediaTransform,
 				texts: texts.map(t => ({
 					id: t.id,
@@ -403,7 +411,8 @@ export default function AddStoryScreen() {
 									const d = (res.assets[0] as any).duration as number | undefined;
 									const ds = typeof d === 'number' ? (d > 1000 ? d / 1000 : d) : undefined;
 									if (typeof ds === 'number' && ds > 30) { Alert.alert('الفيديو طويل', 'يرجى تصوير فيديو أقل من 30 ثانية.'); return; }
-									setPicked({ uri: res.assets[0].uri, type: 'video', durationSec: ds });
+									// Ensure integer seconds to satisfy backend integer type
+									setPicked({ uri: res.assets[0].uri, type: 'video', durationSec: typeof ds === 'number' ? Math.round(ds) : undefined });
 								}
 							}}>
 								<Ionicons name="videocam-outline" size={22} color="#fff" />
@@ -424,8 +433,10 @@ export default function AddStoryScreen() {
 										<Image source={{ uri: picked.uri }} style={styles.media} contentFit="contain" />
 									) : (
 										<VideoView
+											// disable controls
 											style={styles.media}
 											player={player}
+											nativeControls={false}
 										/>
 									)}
 								</Animated.View>
@@ -451,7 +462,7 @@ export default function AddStoryScreen() {
 							))}
 							{isUploading && (
 								<View style={styles.loadingOverlay} pointerEvents="none">
-									<ActivityIndicator size="large" color="#00E0A3" />
+									<ActivityIndicator size="large" color="#1D9BF0" />
 									<Text style={styles.loadingText}>جارٍ النشر...</Text>
 								</View>
 							)}
@@ -768,7 +779,7 @@ const styles = StyleSheet.create({
 		backgroundColor: '#000',
 	},
 	shareBtn: {
-		backgroundColor: '#00E0A3',
+		backgroundColor: '#1D9BF0',
 		paddingVertical: 12,
 		borderRadius: 999,
 		alignItems: 'center',
@@ -803,7 +814,7 @@ const styles = StyleSheet.create({
 		borderRadius: 999,
 		marginHorizontal: 6,
 	},
-	toggleBtnActive: { backgroundColor: '#00E0A3' },
+	toggleBtnActive: { backgroundColor: '#1D9BF0' },
 	toggleBtnText: { color: '#fff', fontWeight: '600' },
 	colorsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
 	colorSwatch: {
@@ -871,7 +882,7 @@ const styles = StyleSheet.create({
 	},
 	deleteLabel: { color: '#fff', fontFamily: 'regular' },
 	doneBtn: {
-		backgroundColor: '#00E0A3',
+		backgroundColor: '#1D9BF0',
 		paddingVertical: 10,
 		paddingHorizontal: 16,
 		borderRadius: 12,

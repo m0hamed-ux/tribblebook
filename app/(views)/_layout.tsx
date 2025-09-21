@@ -10,6 +10,9 @@ export default function Layout() {
         <Stack.Screen name="community" options={{ headerShown: false }} />
         <Stack.Screen name="storyView" options={{ headerShown: false }} />
         <Stack.Screen name="postPreview" options={{ headerShown: false }} />
+        <Stack.Screen name="notifications" options={{ headerShown: false }} />
+        <Stack.Screen name="messages" options={{ headerShown: false }} />
+        <Stack.Screen name="conversation" options={{ headerShown: false }} />
       </Stack>
     </SafeAreaView>
   )

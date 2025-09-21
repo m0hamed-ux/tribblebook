@@ -390,6 +390,7 @@ export default function AddPostPage() {
                     value={title}
                     onChangeText={setTitle}
                     placeholder="اكتب عنوان المنشور..."
+                    
                     placeholderTextColor={theme.colors.text.muted}
                     multiline={false}
                     textAlign="right"

@@ -4,7 +4,7 @@ import { SkeletonPost, SkeletonStoryRow } from '@/app/components/Skeleton'
 import Story, { MyStory } from '@/app/components/story'
 import { styles } from '@/assets/theme/styles'
 import { PostProps, StoryViewProps, UserProps } from '@/lib/database.module'
-import { getPosts, getStories, getUser } from '@/lib/db'
+import { getMyNotifications, getPosts, getStories, getUser } from '@/lib/db'
 import { SignedIn, SignedOut, useUser } from '@clerk/clerk-expo'
 import { useNavigation } from '@react-navigation/native'
 import { Redirect, useRouter } from 'expo-router'
@@ -31,6 +31,7 @@ export default function Page() {
   const [stories, setStories] = useState<Array<{ author: UserProps; stories: StoryViewProps[] }>>([])
   const [profile, setProfile] = useState<UserProps | null>(null)
   const [loading, setLoading] = useState(true)
+  const [unreadCount, setUnreadCount] = useState(0)
 
   
   const loadData = useCallback(async () => {
@@ -43,8 +44,15 @@ export default function Page() {
       if (user?.id) {
         const s = await getStories(user.id)
         setStories(s)
+        // load unread notifications count
+        try {
+          const notifs = await getMyNotifications(user.id)
+          const unread = Array.isArray(notifs) ? notifs.filter(n => !n.is_read).length : 0
+          setUnreadCount(unread)
+        } catch {}
       } else {
         setStories([])
+        setUnreadCount(0)
       }
     } finally {
       setLoading(false)
@@ -106,7 +114,7 @@ export default function Page() {
           refreshing={refreshing}
           ListHeaderComponent={
             <>
-              <Header />
+              <Header unreadCount={unreadCount} />
               {loading ? (
                 <SkeletonStoryRow />
               ) : (

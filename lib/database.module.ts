@@ -7,6 +7,8 @@ export interface UserProps {
     username: string,
     fullname: string,
     profile: string | any,
+    /** ISO string when the user was last seen online */
+    last_seen?: string | Date,
     followers?: Array<UserProps | null>,
     following?: Array<UserProps | null>,
     birthdate?: Date,
@@ -122,4 +124,46 @@ export interface StoryViewersResponse {
     totalViews: number;
     reactionSummary: Record<string, number>;
     viewers: StoryViewerData[];
+}
+
+// Notifications
+export type NotificationType = 'like' | 'comment' | 'reply' | 'follow' | 'mention' | 'save' | 'system'
+export type NotificationTargetType = 'post' | 'comment' | 'story' | 'community' | 'user' | 'system'
+
+export interface NotificationProps {
+    id: string | number
+    recipient_id: string | number
+    actor_id: string | number
+    type: NotificationType
+    target_type: NotificationTargetType
+    target_id: string | number
+    message: string
+    is_read: boolean
+    created_at: string
+    // Joined actor info (backend shape per SQL in GET /notifications)
+    actor?: Pick<UserProps, 'id' | 'username' | 'fullname' | 'profile'>
+}
+
+// Follow requests
+export type FollowRequestStatus = 'pending' | 'accepted' | 'rejected'
+export interface FollowRequest {
+    id: string | number
+    requester_id: string | number
+    target_id: string | number
+    status: FollowRequestStatus
+    created_at: string
+    // joins
+    requester?: Pick<UserProps, 'id' | 'username' | 'fullname' | 'profile' | 'verified'>
+    target?: Pick<UserProps, 'id' | 'username' | 'fullname' | 'profile' | 'verified'>
+}
+
+// Verification requests
+export type VerificationRequestStatus = 'pending' | 'approved' | 'rejected'
+export interface VerificationRequest {
+    id: string | number
+    user_id: string | number
+    request_message: string
+    status: VerificationRequestStatus
+    created_at: string
+    reviewed_at?: string | null
 }

@@ -15,6 +15,12 @@
 			"type": "shell",
 			"command": "npm run typecheck",
 			"group": "build"
+		},
+		{
+			"label": "Typecheck project",
+			"type": "shell",
+			"command": "npm run typecheck",
+			"group": "build"
 		}
 	]
 }

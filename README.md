@@ -1,3 +1,33 @@
+## Clerk configuration for production builds
+
+This app uses `@clerk/clerk-expo`. In production APK/IPA builds you must provide a publishable key at build time.
+
+Two supported ways:
+
+1. Environment variable (recommended)
+
+- Set `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` in your environment or via EAS secrets.
+
+```
+eas secret:create --scope project --name EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY --value <your_publishable_key>
+```
+
+2. expo config `extra`
+
+- Add the key to `app.json` under `expo.extra.clerkPublishableKey`.
+
+```
+{
+   "expo": {
+      "extra": {
+         "clerkPublishableKey": "pk_live_..."
+      }
+   }
+}
+```
+
+The root layout reads the key from `process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` first and falls back to `expo.extra.clerkPublishableKey`.
+
 # Welcome to your Expo app 👋
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
@@ -45,6 +75,21 @@ To learn more about developing your project with Expo, look at the following res
 ## Join the community
 
 Join our community of developers creating universal apps.
+
+## Push notifications for messages
+
+- The app registers for Expo push notifications and stores the device token via `POST /user/save-token` on the backend.
+- When a message is sent, the app now calls `POST /messages/send-notification` with body `{ userId, senderFullname, message }` to trigger a push notification to the recipient.
+
+Configuration:
+
+- Set `EXPO_PUBLIC_API_URL` in your Expo config or environment so the app can reach your backend. It defaults to `https://tribblebook-backend.onrender.com` if not provided.
+
+Example (EAS secret):
+
+```bash
+eas secret:create --scope project --name EXPO_PUBLIC_API_URL --value https://your-backend.example.com
+```
 
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.

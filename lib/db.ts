@@ -1,4 +1,5 @@
-import { CommentProps, CommunityProps, PostProps, StoryViewProps, StoryViewersResponse, UserProps } from "@/lib/database.module";
+import type { VerificationRequest } from "@/lib/database.module";
+import { CommentProps, CommunityProps, FollowRequest, NotificationProps, NotificationTargetType, NotificationType, PostProps, StoryViewProps, StoryViewersResponse, UserProps } from "@/lib/database.module";
 
 export async function getPosts(){
     try{
@@ -714,5 +715,383 @@ export async function updateMyProfile(
     } catch (e) {
         console.log('update profile error:', e)
         return null
+    }
+}
+
+// ================= Notifications =================
+export async function sendNotification(
+    userId: string,
+    payload: {
+        recipientId: string | number
+        type: NotificationType
+        targetType: NotificationTargetType
+        targetId: string | number
+        title: string
+        body: string
+        data?: Record<string, any>
+    }
+) {
+    try {
+        const res = await fetch('https://tribblebook-backend.onrender.com/notifications/send', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${userId}`,
+            },
+            body: JSON.stringify(payload),
+        })
+        if (res.ok) {
+            return await res.json() as {
+                success: boolean
+                message: string
+                notification: NotificationProps
+                pushResult?: any
+            }
+        } else {
+            const body = await safeReadText(res)
+            console.log('send notification failed:', res.status, res.statusText, body)
+            return null
+        }
+    } catch (e) {
+        console.log('send notification error:', e)
+        return null
+    }
+}
+
+export async function getMyNotifications(userId: string) {
+    try {
+        const res = await fetch('https://tribblebook-backend.onrender.com/notifications', {
+            headers: {
+                'Authorization': `Bearer ${userId}`,
+            },
+        })
+        if (res.ok) {
+            return await res.json() as NotificationProps[]
+        } else {
+            const body = await safeReadText(res)
+            console.log('get notifications failed:', res.status, res.statusText, body)
+            return [] as NotificationProps[]
+        }
+    } catch (e) {
+        console.log('get notifications error:', e)
+        return [] as NotificationProps[]
+    }
+}
+
+export async function markNotificationRead(id: string | number, userId: string) {
+    try {
+        const res = await fetch(`https://tribblebook-backend.onrender.com/notifications/${encodeURIComponent(String(id))}/read`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${userId}`,
+            },
+        })
+        if (res.ok) {
+            return await res.json() as {
+                success: boolean
+                message: string
+                notification: NotificationProps
+            }
+        } else {
+            const body = await safeReadText(res)
+            console.log('mark notification read failed:', res.status, res.statusText, body)
+            return null
+        }
+    } catch (e) {
+        console.log('mark notification read error:', e)
+        return null
+    }
+}
+
+export async function markAllNotificationsRead(userId: string) {
+    try {
+        const res = await fetch('https://tribblebook-backend.onrender.com/notifications/read-all', {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${userId}`,
+            },
+        })
+        if (res.ok) {
+            return await res.json() as { success: boolean; message: string }
+        } else {
+            const body = await safeReadText(res)
+            console.log('mark all notifications read failed:', res.status, res.statusText, body)
+            return null
+        }
+    } catch (e) {
+        console.log('mark all notifications read error:', e)
+        return null
+    }
+}
+
+// =============== Reports & Blocks API ===============
+export type ReportTargetType = 'user' | 'post'
+
+export async function createReport(
+    targetType: ReportTargetType,
+    targetId: string | number,
+    userId: string,
+    reason?: string,
+) {
+    try {
+        const res = await fetch('https://tribblebook-backend.onrender.com/reports', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${userId}`,
+            },
+            body: JSON.stringify({ target_type: targetType, target_id: targetId, reason }),
+        })
+        if (res.ok) {
+            return await res.json() as {
+                success: boolean
+                message: string
+                report: {
+                    id: string | number
+                    reporter_id: string | number
+                    target_type: ReportTargetType
+                    target_id: string | number
+                    reason?: string | null
+                    status: string
+                    created_at?: string
+                }
+            }
+        } else {
+            const body = await safeReadText(res)
+            console.log('create report failed:', res.status, res.statusText, body)
+            return null
+        }
+    } catch (e) {
+        console.log('create report error:', e)
+        return null
+    }
+}
+
+export async function blockUser(targetUserId: string | number, userId: string) {
+    try {
+        const res = await fetch(`https://tribblebook-backend.onrender.com/users/${encodeURIComponent(String(targetUserId))}/block`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${userId}` },
+        })
+        if (res.ok) {
+            return await res.json().catch(() => ({}))
+        } else {
+            const body = await safeReadText(res)
+            console.log('block user failed:', res.status, res.statusText, body)
+            return null
+        }
+    } catch (e) {
+        console.log('block user error:', e)
+        return null
+    }
+}
+
+export async function unblockUser(targetUserId: string | number, userId: string) {
+    try {
+        const res = await fetch(`https://tribblebook-backend.onrender.com/users/${encodeURIComponent(String(targetUserId))}/block`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${userId}` },
+        })
+        if (res.ok) {
+            return await res.json().catch(() => ({}))
+        } else {
+            const body = await safeReadText(res)
+            console.log('unblock user failed:', res.status, res.statusText, body)
+            return null
+        }
+    } catch (e) {
+        console.log('unblock user error:', e)
+        return null
+    }
+}
+
+export interface BlockedUserItem {
+    id: string | number
+    blockedAt: string
+    user: UserProps
+}
+
+export async function getBlockedUsers(userId: string) {
+    try {
+        const res = await fetch('https://tribblebook-backend.onrender.com/users/blocked', {
+            headers: { 'Authorization': `Bearer ${userId}` },
+        })
+        if (res.ok) {
+            return await res.json() as BlockedUserItem[]
+        } else {
+            const body = await safeReadText(res)
+            console.log('get blocked users failed:', res.status, res.statusText, body)
+            return [] as BlockedUserItem[]
+        }
+    } catch (e) {
+        console.log('get blocked users error:', e)
+        return [] as BlockedUserItem[]
+    }
+}
+
+export async function getBlockStatus(targetUserId: string | number, userId: string) {
+    try {
+        const res = await fetch(`https://tribblebook-backend.onrender.com/users/${encodeURIComponent(String(targetUserId))}/block-status`, {
+            headers: { 'Authorization': `Bearer ${userId}` },
+        })
+        if (res.ok) {
+            return await res.json() as {
+                userBlockedTarget: boolean
+                targetBlockedUser: boolean
+                isBlocked: boolean
+            }
+        } else {
+            const body = await safeReadText(res)
+            console.log('get block status failed:', res.status, res.statusText, body)
+            return null
+        }
+    } catch (e) {
+        console.log('get block status error:', e)
+        return null
+    }
+}
+
+// =============== Follow Requests API ===============
+export async function sendFollowRequest(targetUserId: string | number, userId: string) {
+    try {
+        const res = await fetch('https://tribblebook-backend.onrender.com/follow-requests', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${userId}`,
+            },
+            body: JSON.stringify({ targetUserId }),
+        })
+        if (res.ok) {
+            return await res.json() as { success: boolean; message: string; request?: FollowRequest; follow?: any }
+        } else {
+            const body = await safeReadText(res)
+            console.log('send follow request failed:', res.status, res.statusText, body)
+            return null
+        }
+    } catch (e) {
+        console.log('send follow request error:', e)
+        return null
+    }
+}
+
+export async function getSentFollowRequests(userId: string) {
+    try {
+        const res = await fetch('https://tribblebook-backend.onrender.com/follow-requests/sent', {
+            headers: { 'Authorization': `Bearer ${userId}` },
+        })
+        if (res.ok) return await res.json() as FollowRequest[]
+        const body = await safeReadText(res)
+        console.log('get sent follow requests failed:', res.status, res.statusText, body)
+        return [] as FollowRequest[]
+    } catch (e) {
+        console.log('get sent follow requests error:', e)
+        return [] as FollowRequest[]
+    }
+}
+
+export async function getReceivedFollowRequests(userId: string) {
+    try {
+        const res = await fetch('https://tribblebook-backend.onrender.com/follow-requests/received', {
+            headers: { 'Authorization': `Bearer ${userId}` },
+        })
+        if (res.ok) return await res.json() as FollowRequest[]
+        const body = await safeReadText(res)
+        console.log('get received follow requests failed:', res.status, res.statusText, body)
+        return [] as FollowRequest[]
+    } catch (e) {
+        console.log('get received follow requests error:', e)
+        return [] as FollowRequest[]
+    }
+}
+
+export async function acceptFollowRequest(requestId: string | number, userId: string) {
+    try {
+        const res = await fetch(`https://tribblebook-backend.onrender.com/follow-requests/${encodeURIComponent(String(requestId))}/accept`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${userId}` },
+        })
+        if (res.ok) return await res.json() as { success: boolean; message: string; follow?: any; request?: FollowRequest }
+        const body = await safeReadText(res)
+        console.log('accept follow request failed:', res.status, res.statusText, body)
+        return null
+    } catch (e) {
+        console.log('accept follow request error:', e)
+        return null
+    }
+}
+
+export async function rejectFollowRequest(requestId: string | number, userId: string) {
+    try {
+        const res = await fetch(`https://tribblebook-backend.onrender.com/follow-requests/${encodeURIComponent(String(requestId))}/reject`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${userId}` },
+        })
+        if (res.ok) return await res.json() as { success: boolean; message: string; request?: FollowRequest }
+        const body = await safeReadText(res)
+        console.log('reject follow request failed:', res.status, res.statusText, body)
+        return null
+    } catch (e) {
+        console.log('reject follow request error:', e)
+        return null
+    }
+}
+
+export async function cancelFollowRequest(requestId: string | number, userId: string) {
+    try {
+        const res = await fetch(`https://tribblebook-backend.onrender.com/follow-requests/${encodeURIComponent(String(requestId))}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${userId}` },
+        })
+        if (res.ok) return await res.json() as { success: boolean; message: string }
+        const body = await safeReadText(res)
+        console.log('cancel follow request failed:', res.status, res.statusText, body)
+        return null
+    } catch (e) {
+        console.log('cancel follow request error:', e)
+        return null
+    }
+}
+
+// =============== Verification Requests API ===============
+export async function createVerificationRequest(request_message: string, userId: string) {
+    try {
+        const res = await fetch('https://tribblebook-backend.onrender.com/users/verification-requests', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${userId}`,
+            },
+            body: JSON.stringify({ request_message }),
+        })
+        if (res.ok) {
+            const data = await res.json().catch(() => ({}))
+            return data as { success: boolean; message: string; request: VerificationRequest }
+        } else {
+            const body = await safeReadText(res)
+            console.log('create verification request failed:', res.status, res.statusText, body)
+            return null
+        }
+    } catch (e) {
+        console.log('create verification request error:', e)
+        return null
+    }
+}
+
+export async function getMyVerificationRequests(userId: string) {
+    try {
+        const res = await fetch('https://tribblebook-backend.onrender.com/users/verification-requests', {
+            headers: { 'Authorization': `Bearer ${userId}` },
+        })
+        if (res.ok) {
+            return await res.json() as VerificationRequest[]
+        } else {
+            const body = await safeReadText(res)
+            console.log('get verification requests failed:', res.status, res.statusText, body)
+            return [] as VerificationRequest[]
+        }
+    } catch (e) {
+        console.log('get verification requests error:', e)
+        return [] as VerificationRequest[]
     }
 }

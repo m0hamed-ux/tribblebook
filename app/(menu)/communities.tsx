@@ -70,23 +70,25 @@ export default function CommunitiesScreen() {
             if (!item) return null
             const id = item.id
             return (
-              <View style={s.cardRow}>
-                <Image source={{ uri: item.profile || 'https://placehold.co/64x64' }} style={s.avatar} />
-                <View style={{ flex: 1 }}>
-                  <Text style={s.title}>{item.name ?? '—'}</Text>
-                  <Text style={s.meta}>{item.member_count?.[0]?.count ?? item.member_count ?? 0} عضو</Text>
-                </View>
-                {admin ? (
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <TouchableOpacity style={s.iconBtn} onPress={() => id != null && router.push({ pathname: '/(menu)/editCommunity', params: { id, name: item.name, description: item.description, profile: item.profile } })}>
-                      <PencilSimple size={18} color={theme.colors.text.primary} />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[s.iconBtn, { backgroundColor: '#fbe9e7' }]} onPress={() => id != null && onDelete(id)}>
-                      <Trash size={18} color="#e53935" />
-                    </TouchableOpacity>
+              <TouchableOpacity onPress={() => id != null && router.replace(`/(views)/community?id=${id}`)}>
+                <View style={s.cardRow}>
+                  <Image source={{ uri: item.profile || 'https://placehold.co/64x64' }} style={s.avatar} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.title}>{item.name ?? '—'}</Text>
+                    <Text style={s.meta}>{item.member_count?.[0]?.count ?? item.member_count ?? 0} عضو</Text>
                   </View>
-                ) : null}
-              </View>
+                  {admin ? (
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <TouchableOpacity style={s.iconBtn} onPress={() => id != null && router.push({ pathname: '/(menu)/editCommunity', params: { id, name: item.name, description: item.description, profile: item.profile } })}>
+                        <PencilSimple size={18} color={theme.colors.text.primary} />
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[s.iconBtn, { backgroundColor: '#fbe9e7' }]} onPress={() => id != null && onDelete(id)}>
+                        <Trash size={18} color="#e53935" />
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+                </View>
+              </TouchableOpacity>
             )
           }}
           ItemSeparatorComponent={() => <View style={{ height: 8 }} />}

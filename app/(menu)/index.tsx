@@ -6,6 +6,7 @@ import {
 	Info,
 	Key,
 	Lock,
+	Prohibit,
 	Scroll as ScrollIcon,
 	SealCheck,
 	SignOut,
@@ -64,6 +65,7 @@ export default function SettingsScreen() {
 				<SettingItem title="إعداد كلمة المرور" Icon={Key} onPress={() => router.push({ pathname: '/(menu)/password' })} />
 				<SettingItem title="خصوصية الحساب" Icon={Lock} onPress={() => router.push({ pathname: '/(menu)/privacy' })} />
 				<SettingItem title="المجتمعات" Icon={UsersThree} onPress={() => router.push({ pathname: '/(menu)/communities' })} />
+				{/* <SettingItem title="المحظورون" Icon={Prohibit} onPress={() => router.push({ pathname: '/(menu)/blocked' })} /> */}
 				<SettingItem title="طلب التحقق" Icon={SealCheck} onPress={() => router.push({ pathname: '/(menu)/verification' })} />
 				<SettingItem title="معلومات التطبيق" Icon={Info} onPress={() => router.push({ pathname: '/(menu)/about' })} />
 				<SettingItem title="الخصوصية والشروط" Icon={ScrollIcon} onPress={() => router.push({ pathname: '/(menu)/terms' })} />

@@ -243,6 +243,7 @@ export default function SignUpScreen() {
             value={code}
             keyboardType="numeric"
             placeholder="رمز التحقق"
+            placeholderTextColor={"#999"}
             onChangeText={(code) => setCode(code)}
             style={styles.input}
           />
@@ -276,6 +277,7 @@ export default function SignUpScreen() {
           autoCapitalize="none"
           value={fullname}
           placeholder="الاسم الكامل"
+          placeholderTextColor={"#999"}
           onChangeText={(name) => {
             setFullname(name)
             clearValidationError('fullname')
@@ -296,6 +298,7 @@ export default function SignUpScreen() {
           autoCapitalize="none"
           value={username}
           placeholder="اسم المستخدم"
+          placeholderTextColor={"#999"}
           onChangeText={(username) => {
             setUsername(username)
             clearValidationError('username')
@@ -351,6 +354,7 @@ export default function SignUpScreen() {
           autoCapitalize="none"
           value={emailAddress}
           placeholder="البريد الإلكتروني"
+          placeholderTextColor={"#999"}
           onChangeText={(email) => {
             setEmailAddress(email)
             clearValidationError('email')
@@ -370,6 +374,7 @@ export default function SignUpScreen() {
         <TextInput
           value={password}
           placeholder="كلمة المرور"
+          placeholderTextColor={"#999"}
           secureTextEntry={true}
           onChangeText={(password) => {
             setPassword(password)

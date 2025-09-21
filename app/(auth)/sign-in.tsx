@@ -168,6 +168,7 @@ export default function Page() {
           autoCapitalize="none"
           value={emailAddress}
           placeholder="البريد الإلكتروني"
+          placeholderTextColor={"#999"}
           onChangeText={(emailAddress) => {
             setEmailAddress(emailAddress)
             clearValidationError('email')
@@ -189,6 +190,7 @@ export default function Page() {
         <TextInput
           value={password}
           placeholder="كلمة المرور"
+          placeholderTextColor={"#999"}
           secureTextEntry={true}
           onChangeText={(password) => {
             setPassword(password)
@@ -210,11 +212,11 @@ export default function Page() {
           {error}
         </Text>
       ) : null}
-      <TouchableOpacity onPress={handleForgotPassword} disabled={isLoading}>
+      {/* <TouchableOpacity onPress={handleForgotPassword} disabled={isLoading}>
         <Text style={[styles.link, {textAlign: 'right', marginBottom: 24, fontFamily: 'regular'}, isLoading && { opacity: 0.6 }]}>
           هل نسيت كلمة المرور؟
         </Text>
-      </TouchableOpacity>
+      </TouchableOpacity> */}
       <TouchableOpacity onPress={onSignInPress} disabled={isLoading}>
         <Text style={[styles.buttonPrimary, isLoading && { opacity: 0.6 }]}>
           {isLoading ? 'جاري تسجيل الدخول...' : 'تسجيل الدخول'}

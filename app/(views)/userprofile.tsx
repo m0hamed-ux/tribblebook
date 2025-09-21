@@ -2,12 +2,12 @@ import Post from '@/app/components/post';
 import { SkeletonPost, SkeletonProfileHeader } from '@/app/components/Skeleton';
 import Story from '@/app/components/story';
 import { PostProps, StoryViewProps, UserProps } from '@/lib/database.module';
-import { followUser, getFollowers, getFollowing, getStories, getUser, getUserPosts, unfollowUser } from '@/lib/db';
+import { blockUser, cancelFollowRequest, createReport, followUser, getBlockStatus, getFollowers, getFollowing, getSentFollowRequests, getStories, getUser, getUserPosts, sendFollowRequest, sendNotification, unblockUser, unfollowUser } from '@/lib/db';
 import { useUser } from '@clerk/clerk-expo';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ArrowLeft, Article, List, LockKey, Repeat, SealCheck } from "phosphor-react-native";
+import { AlignBottomIcon, ArrowLeft, Article, List, LockKey, Repeat, SealCheck } from "phosphor-react-native";
 import { useCallback, useEffect, useState } from 'react';
-import { FlatList, Image, StyleSheet, Text, ToastAndroid, TouchableOpacity, View } from 'react-native';
+import { FlatList, Image, Modal, StyleSheet, Text, TextInput, ToastAndroid, TouchableOpacity, View } from 'react-native';
 
 export default function UserProfileScreen() {
     const { user } = useUser();
@@ -26,9 +26,18 @@ export default function UserProfileScreen() {
     const [loading, setLoading] = useState(true);
     const [followersCount, setFollowersCount] = useState<number>(0);
     const [followingCount, setFollowingCount] = useState<number>(0);
+    // Follow request state (for private accounts)
+    const [requestPending, setRequestPending] = useState<boolean>(false);
+    const [requestId, setRequestId] = useState<string | number | null>(null);
     // Story integration
     const [storyGroups, setStoryGroups] = useState<Array<{ author: UserProps; stories: StoryViewProps[] }>>([]);
     const [profileStoryIndex, setProfileStoryIndex] = useState<number | null>(null);
+    // Blocking state
+    const [blockStatus, setBlockStatus] = useState<{ userBlockedTarget: boolean; targetBlockedUser: boolean; isBlocked: boolean } | null>(null);
+    const [menuVisible, setMenuVisible] = useState(false);
+    const [reportVisible, setReportVisible] = useState(false);
+    const [reportReason, setReportReason] = useState('');
+    const [reporting, setReporting] = useState(false);
 
     // Check if this is the current user's profile
     const isOwnProfile = user?.username === username;
@@ -95,6 +104,24 @@ export default function UserProfileScreen() {
             
             // Allow viewing if public, own profile, or private but current user follows
             const canView = isOwnProfile || !userProfile?.private || isFollowingLocal;
+
+            // Detect existing pending follow request for this private profile (when not following and not own)
+            if (!canView && userProfile?.private && user?.id) {
+                try {
+                    const sent = await getSentFollowRequests(user.id);
+                    const match = Array.isArray(sent) ? sent.find((r: any) => String(r?.target_id) === String(userProfile.id) && r?.status === 'pending') : null;
+                    if (match) {
+                        setRequestPending(true);
+                        setRequestId(match.id);
+                    } else {
+                        setRequestPending(false);
+                        setRequestId(null);
+                    }
+                } catch {}
+            } else {
+                setRequestPending(false);
+                setRequestId(null);
+            }
 
             if (canView) {
                 const posts = await getUserPosts(username);
@@ -167,12 +194,63 @@ export default function UserProfileScreen() {
         setRefreshing(false);
     }, [loadData]);
 
+    // Fetch block status when viewing someone else's profile
+    useEffect(() => {
+        (async () => {
+            try {
+                if (!username || !user?.id) { setBlockStatus(null); return; }
+                if (user?.username && user.username.toLowerCase() === String(username).toLowerCase()) { setBlockStatus({ userBlockedTarget: false, targetBlockedUser: false, isBlocked: false }); return; }
+                const u = await getUser(username);
+                if (u?.id && user?.id) {
+                    const st = await getBlockStatus(u.id, user.id);
+                    setBlockStatus(st ?? { userBlockedTarget: false, targetBlockedUser: false, isBlocked: false });
+                } else {
+                    setBlockStatus(null);
+                }
+            } catch {
+                setBlockStatus(null);
+            }
+        })();
+    }, [username, user?.id]);
+
     const handleFollow = useCallback(async () => {
         if (!profile?.username || !user?.id) return;
-    const target = (profile.id ?? profile.username) as string | number;
+        const target = (profile.id ?? profile.username) as string | number;
         const userId = user.id as string;
         const optimisticNext = !following;
 
+        // Private profile and not following yet -> send follow request instead of direct follow
+        if (optimisticNext && profile?.private) {
+            try {
+                const res = await sendFollowRequest(target, userId);
+                if (res && res.success) {
+                    setRequestPending(true);
+                    setRequestId(res.request?.id ?? null);
+                    ToastAndroid.show('تم إرسال طلب المتابعة', ToastAndroid.SHORT);
+                    // Notify target user about follow request (if not self)
+                    if (profile?.id && String(profile.id) !== String(user.id)) {
+                        const actorName = (user.fullName || user.username) as string;
+                        try {
+                            await sendNotification(user.id, {
+                                recipientId: profile.id,
+                                type: 'follow',
+                                targetType: 'user',
+                                targetId: profile.id,
+                                title: 'طلب متابعة جديد',
+                                body: ` أرسل لك طلب متابعة`,
+                            });
+                        } catch {}
+                    }
+                } else {
+                    ToastAndroid.show('تعذر إرسال الطلب', ToastAndroid.SHORT);
+                }
+            } catch (e) {
+                ToastAndroid.show('تعذر إرسال الطلب', ToastAndroid.SHORT);
+            }
+            return;
+        }
+
+        // Public (or already following -> unfollow)
         // optimistic UI updates
         setFollowing(optimisticNext);
         setFollowers(prev => {
@@ -188,7 +266,7 @@ export default function UserProfileScreen() {
         // optimistic counts
         setFollowersCount(c => Math.max(0, c + (optimisticNext ? 1 : -1)));
 
-        const res = optimisticNext ? await followUser(target, userId) : await unfollowUser(target, userId);
+    const res = optimisticNext ? await followUser(target, userId) : await unfollowUser(target, userId);
         if (!res.success) {
             // revert on failure
             setFollowing(!optimisticNext);
@@ -205,7 +283,21 @@ export default function UserProfileScreen() {
             // revert count
             setFollowersCount(c => Math.max(0, c + (optimisticNext ? -1 : 1)));
         } else {
-            // On success, if profile is private and we just followed, load data; if we unfollowed, hide data
+            // On success, if profile is private and we just followed (rare if backend auto-accepts), load data; if we unfollowed, hide data
+            // Send follow notification for public profiles or when follow actually succeeded
+            if (optimisticNext && profile?.id && String(profile.id) !== String(user.id)) {
+                const actorName = (user.fullName || user.username) as string;
+                try {
+                    await sendNotification(user.id, {
+                        recipientId: profile.id,
+                        type: 'follow',
+                        targetType: 'user',
+                        targetId: profile.id,
+                        title: 'متابع جديد',
+                        body: ` قام بمتابعتك`,
+                    });
+                } catch {}
+            }
             if (profile?.private && optimisticNext) {
                 // Became allowed: fetch posts and lists
                 const posts = await getUserPosts(username!);
@@ -258,8 +350,11 @@ export default function UserProfileScreen() {
                     <TouchableOpacity 
                         style={styles.messageButton}
                         onPress={() => {
-                            // Placeholder for messaging screen
-                            ToastAndroid.show('الرسائل قادمة قريباً', ToastAndroid.SHORT)
+                            try {
+                                if (profile?.username) {
+                                    router.push({ pathname: '/conversation', params: { username: profile.username } })
+                                }
+                            } catch {}
                         }}
                     >
                         <Text style={styles.messageButtonText}>رسالة</Text>
@@ -274,12 +369,42 @@ export default function UserProfileScreen() {
             )
         }
 
+        // Pending follow request state for private profiles
+        if (profile?.private && requestPending) {
+            return (
+                <View style={styles.followActionsRow}>
+                    <TouchableOpacity 
+                        style={[styles.messageButton, { backgroundColor: '#f0f0f0' }]}
+                        disabled
+                    >
+                        <Text style={[styles.messageButtonText, { color: '#555' }]}>قيد الموافقة</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        style={[styles.followButton, styles.followingButton]}
+                        onPress={async () => {
+                            if (!requestId || !user?.id) return
+                            const res = await cancelFollowRequest(requestId, user.id)
+                            if (res && res.success) {
+                                setRequestPending(false)
+                                setRequestId(null)
+                                ToastAndroid.show('تم إلغاء الطلب', ToastAndroid.SHORT)
+                            } else {
+                                ToastAndroid.show('تعذر إلغاء الطلب', ToastAndroid.SHORT)
+                            }
+                        }}
+                    >
+                        <Text style={[styles.followButtonText, styles.followingButtonText]}>إلغاء الطلب</Text>
+                    </TouchableOpacity>
+                </View>
+            )
+        }
+
         return (
             <TouchableOpacity 
                 style={styles.followButton}
                 onPress={handleFollow}
             >
-                <Text style={styles.followButtonText}>متابعة</Text>
+                <Text style={styles.followButtonText}>{profile?.private ? 'طلب متابعة' : 'متابعة'}</Text>
             </TouchableOpacity>
         )
     };
@@ -313,11 +438,14 @@ export default function UserProfileScreen() {
 
     // Determine access once for render
     const canView = isOwnProfile || !profile?.private || following;
+    const isBlockedEitherWay = !!blockStatus?.isBlocked;
+    // Prevent revealing info before we know block status (unless own profile)
+    const blockResolved = isOwnProfile || blockStatus !== null;
 
     return (
         <View style={{flex: 1, backgroundColor: "white"}}>
             <FlatList
-                data={!loading && canView ? (activeTab === 'posts' ? userPosts : []) : []}
+                data={!loading && blockResolved && canView && !isBlockedEitherWay ? (activeTab === 'posts' ? userPosts : []) : []}
                 keyExtractor={(item) => item.id!.toString()}
                 showsVerticalScrollIndicator={false}
                 onScrollBeginDrag={() => {setActivePostId(null)}}
@@ -347,13 +475,20 @@ export default function UserProfileScreen() {
                             <TouchableOpacity onPress={() => router.back()}>
                                 <ArrowLeft size={24} color="#080808" />
                             </TouchableOpacity>
-                            <Text style={styles.headerTitle}>{profile?.fullname}</Text>
-                            <TouchableOpacity>
+                            <Text style={styles.headerTitle}>{isBlockedEitherWay ? 'الحساب' : (profile?.fullname || '')}</Text>
+                            <TouchableOpacity onPress={() => setMenuVisible(true)}>
                                 <List size={24} color="#080808" />
                             </TouchableOpacity>
                         </View>
                         {loading ? (
                             <SkeletonProfileHeader />
+                        ) : (!blockResolved && !isOwnProfile) ? (
+                            <SkeletonProfileHeader />
+                        ) : isBlockedEitherWay ? (
+                            <View style={styles.privateContainer}>
+                                <Text style={styles.privateTitle}>الحساب غير متاح</Text>
+                                <Text style={styles.privateSubtitle}>لا يمكنك عرض هذا الحساب بسبب الحظر</Text>
+                            </View>
                         ) : (
                         <View style={styles.profileInfo}>
                             {/* Replace profile image with story bubble when available; otherwise show image */}
@@ -407,7 +542,7 @@ export default function UserProfileScreen() {
                                 renderFollowButton()
                             )}
 
-                            {/* Tabs Navigation - Show if own, public or following a private profile */}
+                            {/* Tabs (only when view is allowed and not blocked) */}
                             {canView && (
                                 <View style={styles.tabContainer}>
                                     <TouchableOpacity 
@@ -441,7 +576,7 @@ export default function UserProfileScreen() {
                             )}
                         </View>
                         )}
-                        {renderPrivateMessage()}
+                        {!isBlockedEitherWay && renderPrivateMessage()}
                     </>
                 }
                 ListEmptyComponent={
@@ -452,7 +587,7 @@ export default function UserProfileScreen() {
                             ))}
                         </View>
                     ) : (
-                        canView ? (
+                        (!isBlockedEitherWay && canView) ? (
                             <View style={styles.emptyState}>
                                 {activeTab === 'posts' && <Text style={styles.emptyText}>لا توجد منشورات</Text>}
                                 {activeTab === 'reposts' && <Text style={styles.emptyText}>لا توجد إعادة نشر</Text>}
@@ -463,7 +598,7 @@ export default function UserProfileScreen() {
                 }
             />
             {/* Followers/Following Modal */}
-            {listModalVisible && (
+            {listModalVisible && !isBlockedEitherWay && (
                 <View style={styles.listModalBackdrop}>
                     <View style={styles.listModal}>
                         <View style={styles.listHeader}>
@@ -491,6 +626,119 @@ export default function UserProfileScreen() {
                     </View>
                 </View>
             )}
+
+            {/* Profile actions menu */}
+            <Modal
+                // style={{ justifyContent: 'flex-end', padding: 10 }}
+                animationType="fade"
+                visible={menuVisible}
+                transparent
+                onRequestClose={() => setMenuVisible(false)}
+            >
+                <TouchableOpacity style={styles.listModalBackdrop} activeOpacity={1} onPress={() => setMenuVisible(false)} />
+                <View style={[styles.listModal, { paddingHorizontal: 12, paddingTop: 8, maxHeight: undefined }]}>                    
+                    {!isOwnProfile && (
+                        <>
+                            {blockStatus?.userBlockedTarget ? (
+                                <TouchableOpacity
+                                    style={{ paddingVertical: 12 }}
+                                    onPress={async () => {
+                                        try {
+                                            if (!user?.id || !profile?.id) return;
+                                            const res = await unblockUser(profile.id, user.id);
+                                            if (res) {
+                                                ToastAndroid.show('تم إلغاء الحظر', ToastAndroid.SHORT);
+                                                setBlockStatus({ userBlockedTarget: false, targetBlockedUser: blockStatus?.targetBlockedUser || false, isBlocked: !!(blockStatus?.targetBlockedUser) });
+                                            } else {
+                                                ToastAndroid.show('فشل إلغاء الحظر', ToastAndroid.SHORT);
+                                            }
+                                        } catch { ToastAndroid.show('فشل إلغاء الحظر', ToastAndroid.SHORT); }
+                                        finally { setMenuVisible(false); }
+                                    }}
+                                >
+                                    <Text style={{ fontFamily: 'bold', color: '#d00', textAlign: 'center' }}>إلغاء حظر المستخدم</Text>
+                                </TouchableOpacity>
+                            ) : (
+                                <TouchableOpacity
+                                    style={{ paddingVertical: 12 }}
+                                    onPress={async () => {
+                                        try {
+                                            if (!user?.id || !profile?.id) return;
+                                            const res = await blockUser(profile.id, user.id);
+                                            if (res) {
+                                                ToastAndroid.show('تم حظر المستخدم', ToastAndroid.SHORT);
+                                                setBlockStatus({ userBlockedTarget: true, targetBlockedUser: blockStatus?.targetBlockedUser || false, isBlocked: true });
+                                            } else {
+                                                ToastAndroid.show('فشل الحظر', ToastAndroid.SHORT);
+                                            }
+                                        } catch { ToastAndroid.show('فشل الحظر', ToastAndroid.SHORT); }
+                                        finally { setMenuVisible(false); }
+                                    }}
+                                >
+                                    <Text style={{ fontFamily: 'bold', color: '#d00', textAlign: 'center' }}>حظر المستخدم</Text>
+                                </TouchableOpacity>
+                            )}
+                            <View style={{ height: 1, backgroundColor: '#eee' }} />
+                            <TouchableOpacity
+                                style={{ paddingVertical: 12 }}
+                                onPress={() => { setMenuVisible(false); setReportVisible(true); }}
+                            >
+                                <Text style={{ fontFamily: 'bold', color: '#222', textAlign: 'center' }}>الإبلاغ عن المستخدم</Text>
+                            </TouchableOpacity>
+                        </>
+                    )}
+                </View>
+            </Modal>
+
+            {/* Report user modal */}
+            <Modal
+                style={{ justifyContent: 'flex-end', margin: 0 }}
+                animationType="slide"
+                visible={reportVisible}
+                transparent
+                onRequestClose={() => setReportVisible(false)}
+            >
+                <TouchableOpacity style={styles.listModalBackdrop} activeOpacity={1} onPress={() => setReportVisible(false)} />
+                <View style={[styles.listModal, { paddingHorizontal: 16, paddingTop: 12, maxHeight: '70%' }]}>                    
+                    <Text style={[styles.listTitle, { textAlign: 'center', marginBottom: 8 }]}>الإبلاغ عن مستخدم</Text>
+                    <Text style={{ fontFamily: 'regular', color: '#666', textAlign: 'right' }}>سبب الإبلاغ (اختياري)</Text>
+                    <TextInput
+                        style={{ borderWidth: 1, borderColor: '#e6e6e6', borderRadius: 8, padding: 10, minHeight: 100, textAlignVertical: 'top', marginTop: 6, fontFamily: 'regular' }}
+                        placeholder="صف المشكلة بإيجاز..."
+                        placeholderTextColor="#888"
+                        multiline
+                        value={reportReason}
+                        onChangeText={setReportReason}
+                        textAlign='right'
+                    />
+                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                        <TouchableOpacity onPress={() => setReportVisible(false)} style={{ flex: 1, backgroundColor: '#eee', paddingVertical: 12, borderRadius: 8, alignItems: 'center' }}>
+                            <Text style={{ fontFamily: 'bold', color: '#222' }}>إلغاء</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            disabled={reporting}
+                            onPress={async () => {
+                                if (!user?.id || !profile?.id) { ToastAndroid.show('يرجى تسجيل الدخول أولاً', ToastAndroid.SHORT); return; }
+                                try {
+                                    setReporting(true);
+                                    const res = await createReport('user', profile.id, user.id, reportReason.trim() || undefined);
+                                    if (res && res.success) {
+                                        ToastAndroid.show('تم إرسال الإبلاغ', ToastAndroid.SHORT);
+                                        setReportVisible(false);
+                                        setReportReason('');
+                                    } else {
+                                        ToastAndroid.show('فشل إرسال الإبلاغ', ToastAndroid.SHORT);
+                                    }
+                                } catch { ToastAndroid.show('حدث خطأ أثناء الإبلاغ', ToastAndroid.SHORT); }
+                                finally { setReporting(false); }
+                            }}
+                            style={{ flex: 1, backgroundColor: '#d9534f', paddingVertical: 12, borderRadius: 8, alignItems: 'center' }}
+                        >
+                            <Text style={{ fontFamily: 'bold', color: '#fff' }}>{reporting ? 'جارٍ الإرسال...' : 'إبلاغ'}</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </View>
     )
 }
@@ -716,14 +964,16 @@ const styles = StyleSheet.create({
     },
     listModalBackdrop: {
         ...StyleSheet.absoluteFillObject as any,
+        flexDirection: "row",
         backgroundColor: 'rgba(0,0,0,0.4)',
         justifyContent: 'flex-end',
+        alignItems: 'flex-end',
     },
     listModal: {
         maxHeight: '70%',
         backgroundColor: 'white',
-        borderTopLeftRadius: 16,
-        borderTopRightRadius: 16,
+        borderBottomLeftRadius: 16,
+        borderBottomRightRadius: 16,
         paddingBottom: 12,
     },
     listHeader: {

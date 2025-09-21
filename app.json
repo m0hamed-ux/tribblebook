@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "app",
-    "slug": "app",
+    "name": "تريبل بوك",
+    "slug": "tribblebook",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/appIcon.png",
     "scheme": "app",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -13,34 +13,46 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/images/appIcon.png",
+        "backgroundColor": "#3D5AFE"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.mohameddevv.tribblebook"
     },
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/appIcon.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/appIcon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#3D5AFE"
         }
       ],
       "expo-font",
       "expo-secure-store",
       "expo-web-browser",
-      "expo-video"
+      "expo-video",
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "17aabed0-28ea-430d-9dc4-c1f3b951b357"
+      },
+      "clerkPublishableKey": "pk_test_cmFyZS1sZWVjaC0xMS5jbGVyay5hY2NvdW50cy5kZXYk",
+      "EXPO_PUBLIC_SUPABASE_URL": "https://jhtyrwwvzjwsutjyqoog.supabase.co",
+      "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpodHlyd3d2emp3c3V0anlxb29nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0MTk3NTUsImV4cCI6MjA3Mjk5NTc1NX0.gsm21AUi7O7tCj42b1uR2faBxtWsDkBPglNHY1v5RH0",
+      "cloudinaryUploadPreset": "tribble_preset"
     }
   }
 }

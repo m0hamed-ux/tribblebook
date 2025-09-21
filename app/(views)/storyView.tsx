@@ -241,7 +241,7 @@ export default function StoryView() {
 						]
 					}]}>
 						{currentStory.media?.type === 'video' ? (
-							<VideoView player={player} style={{ width: '100%', height: '100%' }} contentFit="contain" />
+							<VideoView nativeControls={false} player={player} style={{ width: '100%', height: '100%' }} contentFit="contain" />
 						) : (
 							<Image source={{ uri: currentStory.media?.uri }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
 						)}
@@ -431,7 +431,7 @@ export default function StoryView() {
 								) : (
 									<View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
 										<View style={styles.reactionRow}>
-											{['🔥','😂','😍','😮','😢','👏'].map((emo) => (
+											{['🔥','😂','😍','😮','😢','👏','❤️'].map((emo) => (
 												<TouchableOpacity
 													key={emo}
 													activeOpacity={0.7}
